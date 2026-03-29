@@ -6,4 +6,129 @@
 
 body {
   margin: 0;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+a {
+  color: #2563eb;
+}
+
+.error {
+  color: #b91c1c;
+}
+
+.hint {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.loading {
+  padding: 1rem;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.top-nav {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.75rem 1rem;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.auth-page {
+  max-width: 24rem;
+  margin: 3rem auto;
+  padding: 0 1rem;
+}
+
+.auth-page label {
+  display: block;
+  margin-bottom: 1rem;
+}
+
+.auth-page input {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+}
+
+.auth-page button {
+  padding: 0.5rem 1rem;
+}
+
+.org-id {
+  padding: 0.75rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  overflow-x: auto;
+}
+
+.dashboard {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.dashboard-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.video-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.video-list li {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.video-list .meta {
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.video-detail {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.meta-line {
+  margin: 0.5rem 0 1rem;
+}
+
+.meta-grid {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+}
+
+.video-player {
+  border-radius: 0.5rem;
+  background: #000;
+  max-height: 70vh;
 }
