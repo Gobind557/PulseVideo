@@ -6,6 +6,7 @@ import { requireRole } from '../../middleware/requireRole.js';
 import { validateBody, validateParams } from '../../middleware/validate.js';
 import {
   changeMemberRoleBodySchema,
+  createInviteBodySchema,
   listMembersParamsSchema,
   memberRoleParamsSchema,
 } from './org.admin.schemas.js';
@@ -14,7 +15,7 @@ import { OrgAdminController } from './org.admin.controller.js';
 export function createOrgAdminRouter(env: Env, orgService: OrgService): Router {
   const router = Router();
   const auth = authenticateJWT(env);
-  const ctrl = new OrgAdminController(orgService);
+  const ctrl = new OrgAdminController(env, orgService);
 
   router.use(auth);
   router.use(requireRole('admin'));
@@ -36,6 +37,13 @@ export function createOrgAdminRouter(env: Env, orgService: OrgService): Router {
     '/:orgId/members/:userId',
     validateParams(memberRoleParamsSchema),
     ctrl.removeMember
+  );
+
+  router.post(
+    '/:orgId/invites',
+    validateParams(listMembersParamsSchema),
+    validateBody(createInviteBodySchema),
+    ctrl.createInvite
   );
 
   return router;

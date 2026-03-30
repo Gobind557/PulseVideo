@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useRegisterMutation } from '@/lib/api/pulseApi';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useRegisterInviteMutation, useRegisterMutation } from '@/lib/api/pulseApi';
 import { setCredentials } from '@/features/auth/authSlice';
 import { useAppDispatch } from '@/store/hooks';
 
@@ -11,17 +11,24 @@ export function RegisterPage() {
   const [organizationName, setOrganizationName] = useState('');
   const [doneOrgId, setDoneOrgId] = useState<string | null>(null);
   const [register, { isLoading, error }] = useRegisterMutation();
+  const [registerInvite, { isLoading: isInviteLoading, error: inviteError }] =
+    useRegisterInviteMutation();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const inviteFromUrl = params.get('invite') ?? '';
+  const [inviteToken, setInviteToken] = useState(inviteFromUrl);
+  const [mode, setMode] = useState<'invite' | 'create'>(inviteFromUrl ? 'invite' : 'create');
+  const isInviteMode = mode === 'invite';
+  const normalizedInvite = useMemo(() => inviteToken.trim(), [inviteToken]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      const tokens = await register({
-        email,
-        password,
-        organizationName,
-      }).unwrap();
+      const tokens = isInviteMode
+        ? await registerInvite({ email, password, inviteToken: normalizedInvite }).unwrap()
+        : await register({ email, password, organizationName }).unwrap();
       dispatch(
         setCredentials({
           accessToken: tokens.accessToken,
@@ -66,10 +73,42 @@ export function RegisterPage() {
     <div className="auth-shell">
       <div className="auth-grid" style={{ gridTemplateColumns: '1fr' }}>
         <div className="auth-card">
-          <h2 className="auth-title">Create an account</h2>
+          <h2 className="auth-title">{isInviteMode ? 'Join organization' : 'Create an account'}</h2>
           <p className="hint">
-            Sign up to start processing and managing your videos.
+            {isInviteMode
+              ? 'You were invited to join an organization. Create your account to continue.'
+              : 'Sign up to start processing and managing your videos.'}
           </p>
+
+          <div className="auth-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className={`btn btn-secondary ${isInviteMode ? '' : 'btn-primary'}`}
+              onClick={() => setMode('create')}
+            >
+              Create new org
+            </button>
+            <button
+              type="button"
+              className={`btn btn-secondary ${isInviteMode ? 'btn-primary' : ''}`}
+              onClick={() => setMode('invite')}
+            >
+              Join with invite
+            </button>
+            {isInviteMode && inviteFromUrl ? (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  // Clear invite from URL by navigating to clean /register
+                  navigate('/register', { replace: true });
+                  setInviteToken('');
+                }}
+              >
+                Clear invite link
+              </button>
+            ) : null}
+          </div>
 
           <form className="auth-form" onSubmit={onSubmit}>
             <label>
@@ -91,28 +130,48 @@ export function RegisterPage() {
                 required
               />
             </label>
-            <label>
-              Organization name
-              <input
-                value={organizationName}
-                onChange={(ev) => setOrganizationName(ev.target.value)}
-                required
-              />
-            </label>
+            {isInviteMode ? (
+              <label>
+                Invite token
+                <input
+                  value={inviteToken}
+                  onChange={(e) => setInviteToken(e.target.value)}
+                  placeholder="Paste invite token"
+                  required
+                />
+              </label>
+            ) : (
+              <label>
+                Organization name
+                <input
+                  value={organizationName}
+                  onChange={(ev) => setOrganizationName(ev.target.value)}
+                  required
+                />
+              </label>
+            )}
 
             <div className="auth-actions">
               <button
                 type="submit"
                 className="btn btn-primary"
-                disabled={isLoading}
+                disabled={isLoading || isInviteLoading}
               >
-                {isLoading ? 'Creating…' : 'Create account'}
+                {isInviteMode
+                  ? isInviteLoading
+                    ? 'Joining…'
+                    : 'Join'
+                  : isLoading
+                    ? 'Creating…'
+                    : 'Create account'}
               </button>
             </div>
           </form>
 
-          {error != null ? (
-            <p className="error">Registration failed (email may be taken).</p>
+          {error != null || inviteError != null ? (
+            <p className="error">
+              Registration failed (email may be taken or invite is invalid/expired).
+            </p>
           ) : null}
 
           <div className="auth-actions">

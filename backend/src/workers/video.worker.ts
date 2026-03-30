@@ -49,11 +49,19 @@ async function main() {
         videoId,
         organizationId,
         progress: 5,
+        stage: 'queued',
       });
 
       await VideoModel.updateOne(
         { _id: videoId, organizationId, status: { $in: ['pending', 'processing'] } },
-        { $set: { status: 'processing', processingError: null } }
+        {
+          $set: {
+            status: 'processing',
+            processingError: null,
+            processingProgress: 5,
+            processingStage: 'queued',
+          },
+        }
       );
 
       try {
@@ -63,12 +71,29 @@ async function main() {
           videoId,
           organizationId,
           progress: 25,
+          stage: 'probing',
         });
+        await VideoModel.updateOne(
+          { _id: videoId, organizationId },
+          { $set: { processingProgress: 25, processingStage: 'probing' } }
+        );
 
         const filePath =
           storage.getLocalAbsolutePath?.(organizationId, video.storagePath) ?? '';
 
         const meta = await ffmpeg.probeAndSample(filePath);
+        await job.updateProgress(70);
+        await publishVideoEvent(redis, {
+          type: 'processing_progress',
+          videoId,
+          organizationId,
+          progress: 70,
+          stage: 'analyzing',
+        });
+        await VideoModel.updateOne(
+          { _id: videoId, organizationId },
+          { $set: { processingProgress: 70, processingStage: 'analyzing' } }
+        );
         const sens = await sensitivity.analyze(meta);
 
         await VideoModel.updateOne(
@@ -78,26 +103,45 @@ async function main() {
               status: 'completed',
               metadata: { ...(video.metadata as Record<string, unknown>), ...meta },
               safetyStatus: sens.safetyStatus,
+              processingProgress: 100,
+              processingStage: 'completed',
             },
           }
         );
 
+        await job.updateProgress(100);
+        await publishVideoEvent(redis, {
+          type: 'processing_progress',
+          videoId,
+          organizationId,
+          progress: 100,
+          stage: 'finalizing',
+        });
         await publishVideoEvent(redis, {
           type: 'processing_completed',
           videoId,
           organizationId,
+          stage: 'completed',
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'processing_failed';
         await VideoModel.updateOne(
           { _id: videoId, organizationId },
-          { $set: { status: 'failed', processingError: message } }
+          {
+            $set: {
+              status: 'failed',
+              processingError: message,
+              processingProgress: null,
+              processingStage: 'failed',
+            },
+          }
         );
         await publishVideoEvent(redis, {
           type: 'processing_failed',
           videoId,
           organizationId,
           error: message,
+          stage: 'failed',
         });
         throw err;
       }

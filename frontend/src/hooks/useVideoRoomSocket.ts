@@ -9,7 +9,8 @@ import { getVideoSocket, disconnectVideoSocket } from '@/lib/socket/socket';
  */
 export function useVideoRoomSocket(
   videoId: string | undefined,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  onStage?: (stage: string | undefined) => void
 ): void {
   const token = useAppSelector((s) => s.auth.accessToken);
   const dispatch = useAppDispatch();
@@ -21,16 +22,21 @@ export function useVideoRoomSocket(
 
     const s = getVideoSocket(token);
 
-    const onProgressEvt = (payload: { progress: number; videoId: string }) => {
+    const onProgressEvt = (payload: { progress: number; stage?: string; videoId: string }) => {
       if (payload.videoId !== videoId) {
         return;
       }
       dispatch(
         pulseApi.util.updateQueryData('getVideo', videoId, (draft) => {
           draft.status = 'processing';
+          draft.processingProgress = payload.progress;
+          if (payload.stage) {
+            draft.processingStage = payload.stage;
+          }
         })
       );
       onProgress?.(payload.progress);
+      onStage?.(payload.stage);
     };
 
     const invalidate = () => {
@@ -75,7 +81,7 @@ export function useVideoRoomSocket(
       s.off('processing_completed', onDone);
       s.off('processing_failed', onFail);
     };
-  }, [dispatch, onProgress, token, videoId]);
+  }, [dispatch, onProgress, onStage, token, videoId]);
 }
 
 export function useDisconnectSocketOnLogout(isAuthed: boolean): void {

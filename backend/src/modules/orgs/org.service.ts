@@ -7,7 +7,9 @@ import {
 import { OrganizationModel } from '../../infrastructure/db/models/organization.model.js';
 import { RefreshTokenModel } from '../../infrastructure/db/models/refresh-token.model.js';
 import { UserModel } from '../../infrastructure/db/models/user.model.js';
-import { ForbiddenError, NotFoundError } from '../../shared/errors.js';
+import { OrgInviteModel } from '../../infrastructure/db/models/org-invite.model.js';
+import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors.js';
+import crypto from 'node:crypto';
 
 /**
  * Membership is the tenant boundary: all org-scoped operations validate via this service.
@@ -182,5 +184,90 @@ export class OrgService {
       { userId: memberUserId, revokedAt: null },
       { $set: { revokedAt: new Date() } }
     );
+  }
+
+  async createOrgInvite(args: {
+    requesterUserId: string;
+    requesterOrganizationId: string;
+    orgIdParam: string;
+    email?: string;
+    role: MembershipRole;
+  }): Promise<{ inviteToken: string; expiresAt: string; organizationId: string; role: MembershipRole; email?: string }> {
+    const { requesterUserId, requesterOrganizationId, orgIdParam, email, role } = args;
+    this.assertOrgMatch(requesterOrganizationId, orgIdParam);
+
+    const inviteToken = crypto.randomBytes(24).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(inviteToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000); // 7 days
+
+    await OrgInviteModel.create({
+      organizationId: requesterOrganizationId,
+      email: email ?? null,
+      role,
+      tokenHash,
+      expiresAt,
+      createdBy: requesterUserId,
+      usedAt: null,
+    });
+
+    return {
+      inviteToken,
+      expiresAt: expiresAt.toISOString(),
+      organizationId: requesterOrganizationId,
+      role,
+      ...(email ? { email } : {}),
+    };
+  }
+
+  async consumeOrgInvite(args: {
+    inviteToken: string;
+    email: string;
+    userId: string;
+  }): Promise<{ organizationId: string; role: MembershipRole }> {
+    const { inviteToken, email, userId } = args;
+    const tokenHash = crypto.createHash('sha256').update(inviteToken).digest('hex');
+    const invite = await OrgInviteModel.findOne({ tokenHash }).lean<{
+      _id: mongoose.Types.ObjectId;
+      organizationId: mongoose.Types.ObjectId;
+      email?: string | null;
+      role: MembershipRole;
+      expiresAt: Date;
+      usedAt?: Date | null;
+    } | null>();
+    if (!invite) {
+      throw new NotFoundError('Invite not found');
+    }
+    if (invite.usedAt) {
+      throw new ForbiddenError('Invite already used');
+    }
+    if (invite.expiresAt.getTime() < Date.now()) {
+      throw new ForbiddenError('Invite expired');
+    }
+    if (invite.email && invite.email.toLowerCase() !== email.toLowerCase()) {
+      throw new ForbiddenError('Invite email mismatch');
+    }
+
+    const organizationId = String(invite.organizationId);
+    const existing = await MembershipModel.findOne({ userId, organizationId }).lean<MembershipLean | null>();
+    if (existing) {
+      throw new ConflictError('User is already a member of this organization');
+    }
+
+    // Ensure invite is single-use even under races: mark used then create membership.
+    const used = await OrgInviteModel.updateOne(
+      { _id: invite._id, usedAt: null },
+      { $set: { usedAt: new Date() } }
+    );
+    if (used.modifiedCount !== 1) {
+      throw new AppError('CONFLICT', 'Invite already used', 409);
+    }
+
+    await MembershipModel.create({
+      userId,
+      organizationId,
+      role: invite.role,
+    });
+
+    return { organizationId, role: invite.role };
   }
 }

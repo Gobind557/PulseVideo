@@ -38,7 +38,17 @@ function Shell({ children }: { children: React.ReactNode }) {
       {token ? (
         <aside className="sidebar">
           <div className="sidebar-brand">
-            <div className="sidebar-hamburger" />
+            <div className="sidebar-hamburger" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                <path
+                  d="M12 3l7 4v10l-7 4-7-4V7l7-4z"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinejoin="round"
+                />
+                <path d="M12 7v10M5 9l7 4 7-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+              </svg>
+            </div>
             <div className="sidebar-title">Pulse</div>
           </div>
           <nav className="sidebar-nav">

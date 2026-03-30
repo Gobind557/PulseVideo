@@ -35,6 +35,21 @@ export class AuthService {
     return this.issueTokens(String(user._id), organizationId, role);
   }
 
+  async registerWithInvite(email: string, password: string, inviteToken: string) {
+    const existing = await UserModel.findOne({ email }).lean();
+    if (existing) {
+      throw new ConflictError('Email already registered');
+    }
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    const user = await UserModel.create({ email, passwordHash });
+    const { organizationId, role } = await this.orgService.consumeOrgInvite({
+      inviteToken,
+      email,
+      userId: String(user._id),
+    });
+    return this.issueTokens(String(user._id), organizationId, role);
+  }
+
   async login(email: string, password: string, organizationId: string) {
     const user = await UserModel.findOne({ email });
     if (!user) {

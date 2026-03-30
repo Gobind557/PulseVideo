@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useAppSelector } from '@/store/hooks';
 import type { MembershipRole } from '@/types/video';
-import { useChangeMemberRoleMutation, useGetOrgMembersQuery, useRemoveOrgMemberMutation } from '@/lib/api/pulseApi';
+import { useChangeMemberRoleMutation, useCreateOrgInviteMutation, useGetOrgMembersQuery, useRemoveOrgMemberMutation } from '@/lib/api/pulseApi';
 import type { OrgMemberDto } from '@/types/membership';
 
 function decodeJwtSub(accessToken: string): string | null {
@@ -33,7 +33,12 @@ export default function AdminMembersPage() {
 
   const [changeRole, { isLoading: isChanging }] = useChangeMemberRoleMutation();
   const [removeMember, { isLoading: isRemoving }] = useRemoveOrgMemberMutation();
+  const [createInvite, { isLoading: isInviting }] = useCreateOrgInviteMutation();
   const [uiError, setUiError] = useState<string | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<MembershipRole>('viewer');
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
 
   const canEditRoles = role === 'admin';
 
@@ -81,6 +86,20 @@ export default function AdminMembersPage() {
         <div>
           <h1>Admin - Organization Members</h1>
           <p className="hint">Manage roles for your organization.</p>
+        </div>
+        <div className="actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              setInviteUrl(null);
+              setInviteEmail('');
+              setInviteRole('viewer');
+              setInviteOpen(true);
+            }}
+          >
+            Invite member
+          </button>
         </div>
       </header>
 
@@ -139,6 +158,84 @@ export default function AdminMembersPage() {
           })}
         </tbody>
       </table>
+
+      {inviteOpen ? (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-card">
+            <h3>Invite member</h3>
+            <p className="hint">
+              Generate a single-use invite link (expires in 7 days). Optionally lock it to an email.
+            </p>
+            <label>
+              Role
+              <select
+                value={inviteRole}
+                onChange={(e) => setInviteRole(e.target.value as MembershipRole)}
+              >
+                {ROLE_OPTIONS.map((r) => (
+                  <option value={r} key={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Email (optional)
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="Lock invite to an email"
+              />
+            </label>
+
+            {inviteUrl ? (
+              <div style={{ marginTop: '0.75rem' }}>
+                <div className="hint">Invite link</div>
+                <input value={inviteUrl} readOnly onFocus={(e) => e.currentTarget.select()} />
+                <div className="modal-actions">
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => void navigator.clipboard.writeText(inviteUrl)}
+                  >
+                    Copy link
+                  </button>
+                  <button className="btn btn-primary btn-sm" onClick={() => setInviteOpen(false)}>
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="modal-actions">
+                <button className="btn btn-secondary btn-sm" onClick={() => setInviteOpen(false)}>
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  disabled={isInviting}
+                  onClick={() =>
+                    void (async () => {
+                      setUiError(null);
+                      try {
+                        const res = await createInvite({
+                          orgId,
+                          role: inviteRole,
+                          ...(inviteEmail.trim() ? { email: inviteEmail.trim() } : {}),
+                        }).unwrap();
+                        setInviteUrl(res.inviteUrl);
+                      } catch (e) {
+                        setUiError(e instanceof Error ? e.message : 'Invite failed');
+                      }
+                    })()
+                  }
+                >
+                  {isInviting ? 'Generating…' : 'Generate invite'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

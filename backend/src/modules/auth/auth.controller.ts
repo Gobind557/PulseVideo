@@ -19,6 +19,20 @@ export class AuthController {
     }
   };
 
+  registerInvite = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email, password, inviteToken } = req.body as {
+        email: string;
+        password: string;
+        inviteToken: string;
+      };
+      const tokens = await this.authService.registerWithInvite(email, password, inviteToken);
+      res.status(201).json(tokens);
+    } catch (e) {
+      next(e);
+    }
+  };
+
   login = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { email, password, organizationId } = req.body as {

@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "worker": "tsx watch src/workers/video.worker.ts",
+    "dev:all": "concurrently -n api,worker -c cyan,magenta \"npm:dev\" \"npm:worker\"",
+    "seed:demo": "tsx src/scripts/seed-demo.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "start:worker": "node dist/workers/video.worker.js",
+    "start:all": "concurrently -n api,worker -c cyan,magenta \"npm:start\" \"npm:start:worker\"",
     "lint": "eslint \"src/**/*.ts\""
   },
   "dependencies": {
@@ -35,6 +38,7 @@
     "@types/jsonwebtoken": "^9.0.9",
     "@types/multer": "^1.4.12",
     "@types/node": "^22.10.7",
+    "concurrently": "^9.2.0",
     "eslint": "^9.18.0",
     "globals": "^15.14.0",
     "tsx": "^4.19.2",

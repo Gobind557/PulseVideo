@@ -1,6 +1,6 @@
 import { createApi } from '@reduxjs/toolkit/query/react';
 import type { VideoDto } from '@/types/video';
-import type { OrgMemberDto } from '@/types/membership';
+import type { OrgMemberDto, VideoAssigneeDto } from '@/types/membership';
 import { createBaseQueryWithReauth } from './baseQueryWithReauth';
 import type { MembershipRole } from '@/types/video';
 
@@ -16,6 +16,12 @@ export type RegisterBody = {
   organizationName: string;
 };
 
+export type RegisterInviteBody = {
+  email: string;
+  password: string;
+  inviteToken: string;
+};
+
 export type PresignedUploadResponse = {
   videoId: string;
   uploadToken: string;
@@ -24,6 +30,21 @@ export type PresignedUploadResponse = {
   fields?: Record<string, string>;
   headers?: Record<string, string>;
   storageKey: string;
+};
+
+export type CreateOrgInviteBody = {
+  orgId: string;
+  role: MembershipRole;
+  email?: string;
+};
+
+export type CreateOrgInviteResponse = {
+  inviteToken: string;
+  inviteUrl: string;
+  expiresAt: string;
+  organizationId: string;
+  role: MembershipRole;
+  email?: string;
 };
 
 /**
@@ -45,6 +66,13 @@ export const pulseApi = createApi({
     register: build.mutation({
       query: (body: RegisterBody) => ({
         url: '/auth/register',
+        method: 'POST',
+        body,
+      }),
+    }),
+    registerInvite: build.mutation({
+      query: (body: RegisterInviteBody) => ({
+        url: '/auth/register-invite',
         method: 'POST',
         body,
       }),
@@ -151,6 +179,46 @@ export const pulseApi = createApi({
       ],
     }),
 
+    updateVideo: build.mutation<void, { videoId: string; originalFilename?: string }>({
+      query: ({ videoId, originalFilename }) => ({
+        url: `/videos/${videoId}`,
+        method: 'PATCH',
+        body: { ...(originalFilename != null ? { originalFilename } : {}) },
+      }),
+      invalidatesTags: (_r, _e, arg) => [
+        { type: 'Video', id: arg.videoId },
+        { type: 'Video', id: 'LIST' },
+      ],
+    }),
+
+    deleteVideo: build.mutation<void, { videoId: string }>({
+      query: ({ videoId }) => ({
+        url: `/videos/${videoId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: () => [{ type: 'Video', id: 'LIST' }],
+    }),
+
+    getVideoAssignees: build.query<VideoAssigneeDto[], { videoId: string }>({
+      query: ({ videoId }) => `/videos/${videoId}/assignees`,
+      providesTags: (_r, _e, arg) => [{ type: 'Video', id: `ASSIGNEES-${arg.videoId}` }],
+    }),
+    assignVideoViewer: build.mutation<void, { videoId: string; userId: string }>({
+      query: ({ videoId, userId }) => ({
+        url: `/videos/${videoId}/assignees`,
+        method: 'POST',
+        body: { userId },
+      }),
+      invalidatesTags: (_r, _e, arg) => [{ type: 'Video', id: `ASSIGNEES-${arg.videoId}` }],
+    }),
+    unassignVideoViewer: build.mutation<void, { videoId: string; userId: string }>({
+      query: ({ videoId, userId }) => ({
+        url: `/videos/${videoId}/assignees/${userId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: (_r, _e, arg) => [{ type: 'Video', id: `ASSIGNEES-${arg.videoId}` }],
+    }),
+
     getOrgMembers: build.query<
       OrgMemberDto[],
       { orgId: string }
@@ -196,12 +264,21 @@ export const pulseApi = createApi({
         { type: 'Membership', id: `MEM-${arg.orgId}-${arg.userId}` },
       ],
     }),
+
+    createOrgInvite: build.mutation<CreateOrgInviteResponse, CreateOrgInviteBody>({
+      query: ({ orgId, role, email }) => ({
+        url: `/orgs/${orgId}/invites`,
+        method: 'POST',
+        body: { role, ...(email ? { email } : {}) },
+      }),
+    }),
   }),
 });
 
 export const {
   useLoginMutation,
   useRegisterMutation,
+  useRegisterInviteMutation,
   useLogoutMutation,
   useListVideosQuery,
   useGetVideoQuery,
@@ -210,7 +287,13 @@ export const {
   useCompletePresignedUploadMutation,
   useUploadVideoMulterMutation,
   useRetryVideoMutation,
+  useUpdateVideoMutation,
+  useDeleteVideoMutation,
+  useGetVideoAssigneesQuery,
+  useAssignVideoViewerMutation,
+  useUnassignVideoViewerMutation,
   useGetOrgMembersQuery,
   useChangeMemberRoleMutation,
   useRemoveOrgMemberMutation,
+  useCreateOrgInviteMutation,
 } = pulseApi;

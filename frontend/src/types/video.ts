@@ -21,6 +21,8 @@ export type VideoDto = {
   metadata: VideoMetadata;
   storagePath: string;
   processingError: string | null;
+  processingProgress?: number | null;
+  processingStage?: string;
   lastJobId: string | null;
   createdAt: string;
   updatedAt: string;

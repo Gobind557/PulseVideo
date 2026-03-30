@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import type { z } from 'zod';
 import type { VideoService } from './video.service.js';
 import type { listVideosQuerySchema } from './video.schemas.js';
+import { AppError } from '../../shared/errors.js';
 
 function paramId(value: string | string[] | undefined): string {
   if (typeof value === 'string') {
@@ -20,7 +21,10 @@ export class VideoController {
     try {
       const user = req.user!;
       const q = req.query as unknown as z.infer<typeof listVideosQuerySchema>;
-      const items = await this.videoService.listForOrg(user.organizationId, q);
+      const items = await this.videoService.listForOrg(user.organizationId, q, {
+        userId: user.userId,
+        role: user.role,
+      });
       res.json(items);
     } catch (e) {
       next(e);
@@ -88,6 +92,11 @@ export class VideoController {
         res.status(400).json({ code: 'VALIDATION_ERROR', message: 'Missing file' });
         return;
       }
+      if (!file.mimetype || !file.mimetype.startsWith('video/')) {
+        throw new AppError('VALIDATION_ERROR', 'Only video uploads are allowed', 400, {
+          mimeType: file.mimetype,
+        });
+      }
       await this.videoService.savePresignedBlob(
         user.organizationId,
         user.userId,
@@ -110,6 +119,11 @@ export class VideoController {
         res.status(400).json({ code: 'VALIDATION_ERROR', message: 'Missing file' });
         return;
       }
+      if (!file.mimetype || !file.mimetype.startsWith('video/')) {
+        throw new AppError('VALIDATION_ERROR', 'Only video uploads are allowed', 400, {
+          mimeType: file.mimetype,
+        });
+      }
       const result = await this.videoService.saveMulterUpload(
         user.organizationId,
         user.userId,
@@ -125,7 +139,10 @@ export class VideoController {
   get = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = req.user!;
-      const doc = await this.videoService.getById(user.organizationId, paramId(req.params.id));
+      const doc = await this.videoService.getById(user.organizationId, paramId(req.params.id), {
+        userId: user.userId,
+        role: user.role,
+      });
       res.json(doc);
     } catch (e) {
       next(e);
@@ -138,7 +155,8 @@ export class VideoController {
       const payload = await this.videoService.getStreamPayload(
         user.organizationId,
         paramId(req.params.id),
-        req.headers.range
+        req.headers.range,
+        { userId: user.userId, role: user.role }
       );
       res.status(payload.statusCode);
       res.setHeader('Accept-Ranges', 'bytes');
@@ -165,6 +183,82 @@ export class VideoController {
         videoId: id,
         requesterUserId: user.userId,
         requesterRole: user.role,
+      });
+      res.status(204).send();
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  update = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user!;
+      const id = paramId(req.params.id);
+      const body = req.body as { originalFilename?: string };
+      await this.videoService.updateVideo({
+        organizationId: user.organizationId,
+        videoId: id,
+        requesterUserId: user.userId,
+        requesterRole: user.role,
+        patch: { originalFilename: body.originalFilename },
+      });
+      res.status(204).send();
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  remove = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user!;
+      const id = paramId(req.params.id);
+      await this.videoService.deleteVideo({ organizationId: user.organizationId, videoId: id });
+      res.status(204).send();
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  listAssignees = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user!;
+      const id = paramId(req.params.id);
+      const assignees = await this.videoService.listVideoAssignees({
+        organizationId: user.organizationId,
+        videoId: id,
+      });
+      res.json(assignees);
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  assignViewer = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user!;
+      const id = paramId(req.params.id);
+      const body = req.body as { userId: string };
+      await this.videoService.assignViewerToVideo({
+        organizationId: user.organizationId,
+        videoId: id,
+        viewerUserId: body.userId,
+        assignedByUserId: user.userId,
+      });
+      res.status(204).send();
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  unassignViewer = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user!;
+      const id = paramId(req.params.id);
+      const viewerUserId = paramId(req.params.userId);
+      await this.videoService.unassignViewerFromVideo({
+        organizationId: user.organizationId,
+        videoId: id,
+        viewerUserId,
       });
       res.status(204).send();
     } catch (e) {

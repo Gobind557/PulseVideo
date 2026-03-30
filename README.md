@@ -54,11 +54,6 @@ Full-stack video platform: upload, background processing (mock FFmpeg + pluggabl
 4. **Upload (editor/admin):** pick a file → the app creates a pending video then uploads via multipart (`POST /videos/:id/upload`).
 5. **Video detail:** open a row; when status is **completed**, the player loads the stream with your JWT. Live processing updates arrive over Socket.io (subscribe after opening the page).
 
-### Production notes
-
-- Run API and **worker** as separate processes (or containers); both need the same `MONGODB_URI`, `REDIS_URL`, and storage configuration.
-- Use distinct **`JWT_SECRET`** and **`JWT_REFRESH_SECRET`** in production.
-- For large files, replace the SPA’s blob-based player with ranged streaming or signed URLs (see [Assumptions and design decisions](#assumptions-and-design-decisions)).
 
 ---
 
@@ -183,6 +178,25 @@ Public.
 **201** — Same token shape as login.
 
 ---
+
+### `POST /api/auth/register-invite`
+
+Public.
+
+Registers a user **into an existing organization** by consuming a single-use invite token.
+
+**Body:**
+
+| Field | Type | Rules |
+|-------|------|--------|
+| `email` | string | email |
+| `password` | string | min 8 |
+| `inviteToken` | string | required |
+
+**201** — `{ accessToken, refreshToken, organizationId, role }`
+
+Frontend UX:
+- Open `GET /register?invite=<inviteToken>` to switch Register into "Join organization" mode.
 
 ### `POST /api/auth/login`
 
@@ -312,9 +326,9 @@ Supports **`Range: bytes=...`**. **200** full body or **206** partial; `Accept-R
 - **Handshake:** `auth: { token: "<access_jwt>" }`
 - **Client → server:** `emit('video:subscribe', videoId, callback?)` — server checks org ownership before joining `video:{videoId}`.
 - **Server → client:**
-  - `processing_progress` — `{ videoId, progress }`
-  - `processing_completed` — `{ videoId }`
-  - `processing_failed` — `{ videoId, error }`
+  - `processing_progress` — `{ videoId, progress, stage? }`
+  - `processing_completed` — `{ videoId, stage? }`
+  - `processing_failed` — `{ videoId, error, stage? }`
 
 Path defaults to **`/socket.io`** (configure client accordingly).
 
@@ -331,16 +345,23 @@ See **[`.env.example`](.env.example)** for the full list. Required for a typical
 | `JWT_SECRET` | long random string | Signs access tokens |
 | `CORS_ORIGIN` | `http://localhost:5173` | Comma-separated allowed origins |
 | `PUBLIC_API_URL` | `http://localhost:4000` | Used in local presigned upload URLs |
+| `PUBLIC_WEB_URL` | `http://localhost:5173` | Used to build invite links |
 | `UPLOAD_DIR` | `uploads` | Relative to `backend/` cwd for local storage |
 | `STORAGE_DRIVER` | `local` or `s3` | S3 needs bucket/region/credentials |
 
 Backend reads **repo-root `.env`** first (see `backend/src/config/env.ts`).
 
-Frontend (optional):
+Frontend (deployment):
 
 | Variable | Purpose |
 |----------|---------|
-| `VITE_WS_URL` | Override Socket.io origin if API is not proxied |
+
+
+## Admin invites (UI)
+
+Admin can generate single-use invite links:
+- UI: **Admin → User Management → Invite member**
+- API: `POST /api/orgs/:orgId/invites` → returns `{ inviteUrl, inviteToken, expiresAt, role, organizationId }`
 
 ---
 
@@ -356,9 +377,4 @@ Frontend (optional):
 
 ---
 
-## Git (reference)
 
-```bash
-git remote add origin <your-remote-url>
-git push -u origin main
-```

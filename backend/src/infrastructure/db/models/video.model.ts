@@ -38,6 +38,16 @@ const videoSchema = new Schema(
     pendingUploadTokenHash: { type: String, default: null },
     pendingUploadExpiresAt: { type: Date, default: null },
     processingError: { type: String, default: null },
+    /**
+     * Real-time processing progress (0-100). Set by worker and streamed to clients via Socket.io.
+     * Null means "unknown / not started".
+     */
+    processingProgress: { type: Number, default: null, min: 0, max: 100 },
+    /**
+     * Human-friendly stage for interview-grade transparency.
+     * Frontend can render "probing / analyzing / finalizing" alongside percent.
+     */
+    processingStage: { type: String, default: 'queued' },
     /** BullMQ job id for idempotency / debugging */
     lastJobId: { type: String, default: null },
   },

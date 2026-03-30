@@ -11,8 +11,9 @@ export default function VideoDetailPage() {
     skip: !videoId,
   });
   const [progress, setProgress] = useState<number | null>(null);
+  const [stage, setStage] = useState<string | undefined>(undefined);
 
-  useVideoRoomSocket(videoId || undefined, setProgress);
+  useVideoRoomSocket(videoId || undefined, setProgress, setStage);
 
   if (!videoId) {
     return <p>Missing video id</p>;
@@ -46,7 +47,11 @@ export default function VideoDetailPage() {
           </>
         )}
         {progress != null && data.status === 'processing' && (
-          <> Progress: {progress}%</>
+          <>
+            {' '}
+            Progress: {progress}%
+            {stage ? <> · Stage: {stage}</> : null}
+          </>
         )}
       </p>
       {data.processingError && (

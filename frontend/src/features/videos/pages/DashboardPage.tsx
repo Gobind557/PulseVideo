@@ -1,11 +1,12 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   useCreateVideoMutation,
   useListVideosQuery,
   useRetryVideoMutation,
   useUploadVideoMulterMutation,
 } from '@/lib/api/pulseApi';
+import { AdminActions, EditorActions, ViewerActions } from '@/features/videos/components/VideoActions';
 import { useRBAC } from '@/hooks/useRBAC';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import {
@@ -14,6 +15,8 @@ import {
   uploadSucceeded,
 } from '@/features/upload/uploadSlice';
 import { registerAbort, releaseAbort } from '@/lib/upload/abortRegistry';
+import type { VideoDto } from '@/types/video';
+import { getVideoSocket } from '@/lib/socket/socket';
 
 function DashboardContent() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -39,18 +42,21 @@ function DashboardContent() {
     [status, minDurationSec, maxDurationSec]
   );
 
-  const { data: videos, isFetching } = useListVideosQuery(queryArgs);
+  const { data: videos, isFetching, refetch } = useListVideosQuery(queryArgs);
   const [createVideo, { isLoading: creating }] = useCreateVideoMutation();
   const [retryVideo] = useRetryVideoMutation();
   const [uploadMulter, { isLoading: uploading }] =
     useUploadVideoMulterMutation();
 
-  const { role, canUpload, canDelete } = useRBAC();
+  const { role, canUpload } = useRBAC();
   const dispatch = useAppDispatch();
   const token = useAppSelector((s) => s.auth.accessToken);
   const fileRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'success' | 'error' | 'info' }>>([]);
+  const [nameOverrides, setNameOverrides] = useState<Record<string, string>>({});
+  const [hiddenVideoIds, setHiddenVideoIds] = useState<Record<string, true>>({});
 
   const setFilter = useCallback(
     (key: string, value: string) => {
@@ -109,14 +115,89 @@ function DashboardContent() {
   }, [token]);
 
   const filteredVideos = useMemo(() => videos ?? [], [videos]);
+  const visibleVideos = useMemo(
+    () =>
+      filteredVideos
+        .filter((v) => !hiddenVideoIds[v._id])
+        .map((v) => ({
+          ...v,
+          metadata: {
+            ...v.metadata,
+            ...(nameOverrides[v._id] ? { originalFilename: nameOverrides[v._id] } : {}),
+          },
+        })),
+    [filteredVideos, hiddenVideoIds, nameOverrides]
+  );
+
+  const [liveProgress, setLiveProgress] = useState<Record<string, number>>({});
+  const [liveStage, setLiveStage] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!token) return;
+    const processingIds = visibleVideos.filter((v) => v.status === 'processing').map((v) => v._id);
+    if (processingIds.length === 0) return;
+
+    const s = getVideoSocket(token);
+    const onProgressEvt = (payload: { progress: number; stage?: string; videoId: string }) => {
+      setLiveProgress((prev) => ({ ...prev, [payload.videoId]: payload.progress }));
+      if (payload.stage) {
+        setLiveStage((prev) => ({ ...prev, [payload.videoId]: payload.stage! }));
+      }
+    };
+    const onDone = (payload: { videoId: string }) => {
+      setLiveProgress((prev) => ({ ...prev, [payload.videoId]: 100 }));
+      setLiveStage((prev) => ({ ...prev, [payload.videoId]: 'completed' }));
+      refetch();
+    };
+    const onFail = (payload: { videoId: string }) => {
+      setLiveProgress((prev) => {
+        const copy = { ...prev };
+        delete copy[payload.videoId];
+        return copy;
+      });
+      setLiveStage((prev) => {
+        const copy = { ...prev };
+        delete copy[payload.videoId];
+        return copy;
+      });
+      refetch();
+    };
+    s.on('processing_progress', onProgressEvt);
+    s.on('processing_completed', onDone);
+    s.on('processing_failed', onFail);
+    for (const id of processingIds) {
+      s.emit('video:subscribe', id);
+    }
+    return () => {
+      s.off('processing_progress', onProgressEvt);
+      s.off('processing_completed', onDone);
+      s.off('processing_failed', onFail);
+    };
+  }, [refetch, token, visibleVideos]);
 
   const tabCounts = useMemo(() => {
-    const all = filteredVideos.length;
-    const completed = filteredVideos.filter((v) => v.status === 'completed').length;
-    const processing = filteredVideos.filter((v) => v.status === 'processing').length;
-    const failed = filteredVideos.filter((v) => v.status === 'failed').length;
+    const all = visibleVideos.length;
+    const completed = visibleVideos.filter((v) => v.status === 'completed').length;
+    const processing = visibleVideos.filter((v) => v.status === 'processing').length;
+    const failed = visibleVideos.filter((v) => v.status === 'failed').length;
     return { all, completed, processing, failed };
-  }, [filteredVideos]);
+  }, [visibleVideos]);
+
+  const pushToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const id = `${Date.now()}-${Math.random()}`;
+    setToasts((prev) => [...prev, { id, message, type }]);
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 2400);
+  }, []);
+
+  const retryWithFeedback = async (video: VideoDto) => {
+    try {
+      await retryVideo({ videoId: video._id }).unwrap();
+      pushToast('Retry queued', 'success');
+    } catch {
+      pushToast('Retry failed', 'error');
+    }
+  };
 
   const activeTab = status ?? 'all';
 
@@ -156,7 +237,13 @@ function DashboardContent() {
                   if (f) void uploadFile(f);
                 }}
               />
-              <div className="upload-dropzone-icon" />
+              <div className="upload-dropzone-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                  <path d="M12 16V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <path d="M8 10l4-4 4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M4 17.5A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </div>
               <div className="upload-dropzone-title">Upload a New Video</div>
               <div className="upload-dropzone-subtitle">
                 Drag and drop or click to select your file
@@ -172,9 +259,33 @@ function DashboardContent() {
               </button>
               {uploadError ? <p className="error">{uploadError}</p> : null}
             </div>
-            <div className="hero-preview" />
+            <div className="hero-preview">
+              <h3>Queue Snapshot</h3>
+              <div className="hero-preview-grid">
+                <div>
+                  <span>Processing</span>
+                  <strong>{tabCounts.processing}</strong>
+                </div>
+                <div>
+                  <span>Completed</span>
+                  <strong>{tabCounts.completed}</strong>
+                </div>
+                <div>
+                  <span>Flagged</span>
+                  <strong>{tabCounts.failed}</strong>
+                </div>
+              </div>
+              <p>Live overview of current pipeline health.</p>
+            </div>
           </section>
         ) : null}
+        <div className="toast-stack">
+          {toasts.map((t) => (
+            <div key={t.id} className={`toast toast-${t.type}`}>
+              {t.message}
+            </div>
+          ))}
+        </div>
 
         <section className="table-panel">
           <div className="table-panel-toolbar">
@@ -246,13 +357,21 @@ function DashboardContent() {
                 </tr>
               </thead>
               <tbody>
-                {filteredVideos.map((v) => {
+                {visibleVideos.map((v) => {
                   const isOwn = currentUserId != null && currentUserId === v.createdBy;
                   const canEditOwn = role === 'editor' && isOwn;
                   const canEditAsAdmin = role === 'admin';
                   const canEditRow = canEditAsAdmin || canEditOwn;
                   const progress =
-                    v.status === 'completed' ? 100 : v.status === 'processing' ? 55 : 0;
+                    v.status === 'completed'
+                      ? 100
+                      : v.status === 'failed'
+                        ? 0
+                        : liveProgress[v._id] ?? v.processingProgress ?? null;
+                  const stage =
+                    v.status === 'processing'
+                      ? liveStage[v._id] ?? v.processingStage ?? 'processing'
+                      : v.status;
                   return (
                     <tr key={v._id}>
                       <td>
@@ -267,40 +386,86 @@ function DashboardContent() {
                       </td>
                       <td>
                         <div className="progress-track">
-                          <div className="progress-fill" style={{ width: `${progress}%` }} />
+                          {progress == null ? (
+                            <div className="progress-fill progress-fill-indeterminate" />
+                          ) : (
+                            <div className="progress-fill" style={{ width: `${progress}%` }} />
+                          )}
                         </div>
-                        <div className="progress-text">{progress}%</div>
+                        <div className="progress-text">
+                          {progress == null ? 'Processing…' : `${progress}%`}
+                          {stage && v.status === 'processing' ? ` · ${stage}` : ''}
+                        </div>
                       </td>
                       <td>{new Date(v.updatedAt).toLocaleString()}</td>
                       <td>
-                        <div className="actions">
-                          <Link className="btn btn-secondary btn-sm" to={`/videos/${v._id}`}>
-                            View
-                          </Link>
-                          {canEditRow ? (
-                            <Link className="btn btn-secondary btn-sm" to={`/videos/${v._id}`}>
-                              Edit
-                            </Link>
-                          ) : null}
-                          {canDelete ? (
-                            <button
-                              type="button"
-                              className="danger btn-sm"
-                              onClick={() => window.alert('Delete endpoint will be wired next step.')}
-                            >
-                              Delete
-                            </button>
-                          ) : null}
-                          {v.status === 'failed' && (role === 'admin' || role === 'editor') ? (
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => void retryVideo({ videoId: v._id })}
-                            >
-                              Retry
-                            </button>
-                          ) : null}
-                        </div>
+                        {role === 'admin' ? (
+                          <div className="actions">
+                            <AdminActions
+                              video={v}
+                              canEdit={canEditRow}
+                              onToast={pushToast}
+                              onRenameOptimistic={(videoId, nextName) =>
+                                setNameOverrides((prev) => ({ ...prev, [videoId]: nextName }))
+                              }
+                              onRenameRollback={(videoId) =>
+                                setNameOverrides((prev) => {
+                                  const copy = { ...prev };
+                                  delete copy[videoId];
+                                  return copy;
+                                })
+                              }
+                              onDeleteOptimistic={(videoId) =>
+                                setHiddenVideoIds((prev) => ({ ...prev, [videoId]: true }))
+                              }
+                              onDeleteRollback={(videoId) =>
+                                setHiddenVideoIds((prev) => {
+                                  const copy = { ...prev };
+                                  delete copy[videoId];
+                                  return copy;
+                                })
+                              }
+                            />
+                            {v.status === 'failed' ? (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => void retryWithFeedback(v)}
+                              >
+                                Retry
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : role === 'editor' ? (
+                          <div className="actions">
+                            <EditorActions
+                              video={v}
+                              canEdit={canEditRow}
+                              onToast={pushToast}
+                              onRenameOptimistic={(videoId, nextName) =>
+                                setNameOverrides((prev) => ({ ...prev, [videoId]: nextName }))
+                              }
+                              onRenameRollback={(videoId) =>
+                                setNameOverrides((prev) => {
+                                  const copy = { ...prev };
+                                  delete copy[videoId];
+                                  return copy;
+                                })
+                              }
+                            />
+                            {v.status === 'failed' ? (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => void retryWithFeedback(v)}
+                              >
+                                Retry
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <ViewerActions video={v} />
+                        )}
                       </td>
                     </tr>
                   );

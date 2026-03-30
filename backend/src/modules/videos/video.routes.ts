@@ -7,10 +7,12 @@ import { validateBody, validateQuery } from '../../middleware/validate.js';
 import { VideoController } from './video.controller.js';
 import type { VideoService } from './video.service.js';
 import {
+  assignVideoViewerBodySchema,
   completeUploadBodySchema,
   createVideoBodySchema,
   listVideosQuerySchema,
   presignedUploadBodySchema,
+  updateVideoBodySchema,
 } from './video.schemas.js';
 
 const upload = multer({
@@ -48,6 +50,16 @@ export function createVideoRouter(env: Env, videoService: VideoService): Router 
   router.get('/:id/stream', requireRole('viewer'), ctrl.stream);
   router.post('/:id/upload', requireRole('editor'), upload.single('file'), ctrl.multerUpload);
   router.post('/:id/retry', requireRole('editor'), ctrl.retry);
+  router.patch('/:id', requireRole('editor'), validateBody(updateVideoBodySchema), ctrl.update);
+  router.delete('/:id', requireRole('admin'), ctrl.remove);
+  router.get('/:id/assignees', requireRole('admin'), ctrl.listAssignees);
+  router.post(
+    '/:id/assignees',
+    requireRole('admin'),
+    validateBody(assignVideoViewerBodySchema),
+    ctrl.assignViewer
+  );
+  router.delete('/:id/assignees/:userId', requireRole('admin'), ctrl.unassignViewer);
   router.get('/:id', requireRole('viewer'), ctrl.get);
 
   return router;

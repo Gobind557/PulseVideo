@@ -20,3 +20,8 @@ export const changeMemberRoleBodySchema = z.object({
   role: z.enum(MEMBERSHIP_ROLE_ORDER) as z.ZodType<MembershipRole>,
 });
 
+export const createInviteBodySchema = z.object({
+  email: z.string().email().optional(),
+  role: z.enum(MEMBERSHIP_ROLE_ORDER).default('viewer') as z.ZodType<MembershipRole>,
+});
+

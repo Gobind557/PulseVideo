@@ -8,6 +8,7 @@ import {
   logoutBodySchema,
   refreshBodySchema,
   registerBodySchema,
+  registerWithInviteBodySchema,
 } from './auth.schemas.js';
 
 export function createAuthRouter(_env: Env, authService: AuthService): Router {
@@ -15,6 +16,7 @@ export function createAuthRouter(_env: Env, authService: AuthService): Router {
   const ctrl = new AuthController(authService);
 
   router.post('/register', validateBody(registerBodySchema), ctrl.register);
+  router.post('/register-invite', validateBody(registerWithInviteBodySchema), ctrl.registerInvite);
   router.post('/login', validateBody(loginBodySchema), ctrl.login);
   router.post('/refresh', validateBody(refreshBodySchema), ctrl.refresh);
   router.post('/logout', validateBody(logoutBodySchema), ctrl.logout);

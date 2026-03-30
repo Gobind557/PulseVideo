@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { MembershipRole } from '../../infrastructure/db/models/membership.model.js';
+import type { Env } from '../../config/env.js';
 import type { OrgService } from './org.service.js';
 
 function paramId(value: string | string[] | undefined): string {
@@ -13,7 +14,10 @@ function paramId(value: string | string[] | undefined): string {
 }
 
 export class OrgAdminController {
-  constructor(private readonly orgService: OrgService) {}
+  constructor(
+    private readonly env: Env,
+    private readonly orgService: OrgService
+  ) {}
 
   listMembers = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -61,6 +65,26 @@ export class OrgAdminController {
         memberUserId,
       });
       res.status(204).send();
+    } catch (e) {
+      next(e);
+    }
+  };
+
+  createInvite = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const requester = req.user!;
+      const orgIdParam = paramId(req.params.orgId);
+      const body = req.body as { email?: string; role: MembershipRole };
+      const result = await this.orgService.createOrgInvite({
+        requesterUserId: requester.userId,
+        requesterOrganizationId: requester.organizationId,
+        orgIdParam,
+        email: body.email,
+        role: body.role,
+      });
+      const base = this.env.PUBLIC_WEB_URL.replace(/\/$/, '');
+      const inviteUrl = `${base}/register?invite=${encodeURIComponent(result.inviteToken)}`;
+      res.status(201).json({ ...result, inviteUrl });
     } catch (e) {
       next(e);
     }

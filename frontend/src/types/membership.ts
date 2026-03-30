@@ -6,3 +6,8 @@ export type OrgMemberDto = {
   role: MembershipRole;
 };
 
+export type VideoAssigneeDto = {
+  userId: string;
+  email: string;
+};
+

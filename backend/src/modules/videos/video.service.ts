@@ -11,7 +11,10 @@ import {
   type VideoLean,
   type VideoMetadata,
 } from '../../infrastructure/db/models/video.model.js';
+import { MembershipModel } from '../../infrastructure/db/models/membership.model.js';
+import { UserModel } from '../../infrastructure/db/models/user.model.js';
 import type { MembershipRole } from '../../infrastructure/db/models/membership.model.js';
+import { VideoAssignmentModel } from '../../infrastructure/db/models/video-assignment.model.js';
 import { AppError, ForbiddenError, NotFoundError, RangeNotSatisfiableError } from '../../shared/errors.js';
 import { parseByteRange } from '../../shared/http-range.js';
 
@@ -31,6 +34,8 @@ export class VideoService {
       organizationId,
       createdBy: userId,
       status: 'pending',
+      processingStage: 'queued',
+      processingProgress: null,
       metadata: originalFilename ? { originalFilename } : {},
     });
     return doc;
@@ -178,11 +183,22 @@ export class VideoService {
       status?: string;
       minDurationSec?: number;
       maxDurationSec?: number;
-    }
+    },
+    requester?: { userId: string; role: MembershipRole }
   ) {
     const q: Record<string, unknown> = { organizationId };
     if (filters.status) {
       q.status = filters.status;
+    }
+    if (requester?.role === 'viewer') {
+      const assignments = await VideoAssignmentModel.find({
+        organizationId,
+        userId: requester.userId,
+      })
+        .select({ videoId: 1 })
+        .lean<{ videoId: unknown }[]>();
+      const videoIds = assignments.map((a) => String(a.videoId));
+      q._id = { $in: videoIds };
     }
     const docs = await VideoModel.find(q).sort({ createdAt: -1 }).lean();
     return docs.filter((d) => {
@@ -197,23 +213,26 @@ export class VideoService {
     });
   }
 
-  async getById(organizationId: string, videoId: string) {
+  async getById(organizationId: string, videoId: string, requester?: { userId: string; role: MembershipRole }) {
     const doc = await VideoModel.findOne({ _id: videoId, organizationId }).lean<VideoLean | null>();
     if (!doc) {
       throw new NotFoundError('Video not found');
     }
+    await this.assertCanReadVideo({ organizationId, videoId, requester });
     return doc;
   }
 
   async getStreamPayload(
     organizationId: string,
     videoId: string,
-    rangeHeader: string | undefined
+    rangeHeader: string | undefined,
+    requester?: { userId: string; role: MembershipRole }
   ) {
     const video = await VideoModel.findOne({ _id: videoId, organizationId }).lean<VideoLean | null>();
     if (!video?.storagePath) {
       throw new NotFoundError('Video not found or not uploaded');
     }
+    await this.assertCanReadVideo({ organizationId, videoId, requester });
     const { size: total } = await this.storage.stat(organizationId, video.storagePath);
     const mimeType =
       (video.metadata as VideoMetadata)?.mimeType ?? 'application/octet-stream';
@@ -289,11 +308,143 @@ export class VideoService {
         $set: {
           status: 'pending',
           processingError: null,
+          processingProgress: null,
+          processingStage: 'queued',
         },
       }
     );
 
     await this.enqueueProcessing(videoId, organizationId);
+  }
+
+  async updateVideo(args: {
+    organizationId: string;
+    videoId: string;
+    requesterUserId: string;
+    requesterRole: MembershipRole;
+    patch: { originalFilename?: string };
+  }): Promise<void> {
+    const { organizationId, videoId, requesterUserId, requesterRole, patch } = args;
+    const video = await VideoModel.findOne({ _id: videoId, organizationId }).lean<VideoLean | null>();
+    if (!video) {
+      throw new NotFoundError('Video not found');
+    }
+    const isAdmin = requesterRole === 'admin';
+    const isCreator = video.createdBy.toString() === requesterUserId;
+    if (!isAdmin && !isCreator) {
+      throw new ForbiddenError('Only the creator or admin can edit this video');
+    }
+    const $set: Record<string, unknown> = {};
+    if (patch.originalFilename != null) {
+      const existing = (video.metadata as VideoMetadata) ?? {};
+      $set.metadata = { ...existing, originalFilename: patch.originalFilename };
+    }
+    if (Object.keys($set).length === 0) return;
+    await VideoModel.updateOne({ _id: videoId, organizationId }, { $set });
+  }
+
+  async deleteVideo(args: {
+    organizationId: string;
+    videoId: string;
+  }): Promise<void> {
+    const { organizationId, videoId } = args;
+    const existing = await VideoModel.findOne({ _id: videoId, organizationId }).lean<VideoLean | null>();
+    if (!existing) {
+      throw new NotFoundError('Video not found');
+    }
+    await VideoModel.deleteOne({ _id: videoId, organizationId });
+    // NOTE: storage cleanup is intentionally best-effort and omitted here to keep StorageProvider portable.
+    // In production, implement lifecycle cleanup (S3 delete / local unlink) via StorageProvider.
+    await VideoAssignmentModel.deleteMany({ organizationId, videoId });
+  }
+
+  async listVideoAssignees(args: {
+    organizationId: string;
+    videoId: string;
+  }): Promise<Array<{ userId: string; email: string }>> {
+    const { organizationId, videoId } = args;
+    const video = await VideoModel.findOne({ _id: videoId, organizationId }).lean<VideoLean | null>();
+    if (!video) {
+      throw new NotFoundError('Video not found');
+    }
+    const assignments = await VideoAssignmentModel.find({ organizationId, videoId })
+      .select({ userId: 1 })
+      .lean<Array<{ userId: string }>>();
+    const userIds = assignments.map((a) => String(a.userId));
+    if (userIds.length === 0) return [];
+    const users = await UserModel.find({ _id: { $in: userIds } })
+      .select({ email: 1 })
+      .lean<Array<{ _id: string; email: string }>>();
+    const emailByUserId = new Map(users.map((u) => [String(u._id), u.email]));
+    return userIds
+      .map((userId) => ({ userId, email: emailByUserId.get(userId) }))
+      .filter((item): item is { userId: string; email: string } => item.email != null);
+  }
+
+  async assignViewerToVideo(args: {
+    organizationId: string;
+    videoId: string;
+    viewerUserId: string;
+    assignedByUserId: string;
+  }): Promise<void> {
+    const { organizationId, videoId, viewerUserId, assignedByUserId } = args;
+    const video = await VideoModel.findOne({ _id: videoId, organizationId }).lean<VideoLean | null>();
+    if (!video) {
+      throw new NotFoundError('Video not found');
+    }
+    const membership = await MembershipModel.findOne({
+      organizationId,
+      userId: viewerUserId,
+    }).lean<{ role: MembershipRole } | null>();
+    if (!membership) {
+      throw new NotFoundError('Membership not found');
+    }
+    if (membership.role !== 'viewer') {
+      throw new ForbiddenError('Only viewers can be assigned');
+    }
+    await VideoAssignmentModel.updateOne(
+      { organizationId, videoId, userId: viewerUserId },
+      {
+        $set: {
+          organizationId,
+          videoId,
+          userId: viewerUserId,
+          assignedBy: assignedByUserId,
+        },
+      },
+      { upsert: true }
+    );
+  }
+
+  async unassignViewerFromVideo(args: {
+    organizationId: string;
+    videoId: string;
+    viewerUserId: string;
+  }): Promise<void> {
+    const { organizationId, videoId, viewerUserId } = args;
+    const video = await VideoModel.findOne({ _id: videoId, organizationId }).lean<VideoLean | null>();
+    if (!video) {
+      throw new NotFoundError('Video not found');
+    }
+    await VideoAssignmentModel.deleteOne({ organizationId, videoId, userId: viewerUserId });
+  }
+
+  private async assertCanReadVideo(args: {
+    organizationId: string;
+    videoId: string;
+    requester?: { userId: string; role: MembershipRole };
+  }): Promise<void> {
+    const { organizationId, videoId, requester } = args;
+    if (!requester) return;
+    if (requester.role !== 'viewer') return;
+    const assignment = await VideoAssignmentModel.findOne({
+      organizationId,
+      videoId,
+      userId: requester.userId,
+    }).lean();
+    if (!assignment) {
+      throw new ForbiddenError('Video not assigned to viewer');
+    }
   }
 
   private async enqueueProcessing(videoId: string, organizationId: string) {
@@ -306,7 +457,14 @@ export class VideoService {
     const jobId = job.id ?? dedupeKey;
     await VideoModel.updateOne(
       { _id: videoId, organizationId },
-      { $set: { lastJobId: String(jobId), status: 'processing' } }
+      {
+        $set: {
+          lastJobId: String(jobId),
+          status: 'processing',
+          processingProgress: 0,
+          processingStage: 'queued',
+        },
+      }
     );
   }
 }

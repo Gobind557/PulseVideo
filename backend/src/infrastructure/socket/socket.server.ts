@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import type { Redis } from 'ioredis';
 import type { Env } from '../../config/env.js';
 import { VideoModel } from '../db/models/video.model.js';
+import { VideoAssignmentModel } from '../db/models/video-assignment.model.js';
 import type { MembershipRole } from '../db/models/membership.model.js';
 import { VIDEO_EVENT_CHANNEL, type VideoSocketEvent } from './video-event-bus.js';
 import { UnauthorizedError } from '../../shared/errors.js';
@@ -54,9 +55,21 @@ export function attachSocketServer(
     socket.on('video:subscribe', async (videoId: string, cb?: (err?: Error) => void) => {
       try {
         const orgId = socket.data.organizationId as string;
+        const role = socket.data.role as MembershipRole;
+        const userId = socket.data.userId as string;
         const doc = await VideoModel.findOne({ _id: videoId, organizationId: orgId }).lean();
         if (!doc) {
           throw new Error('Video not found');
+        }
+        if (role === 'viewer') {
+          const assignment = await VideoAssignmentModel.findOne({
+            organizationId: orgId,
+            videoId,
+            userId,
+          }).lean();
+          if (!assignment) {
+            throw new Error('Forbidden');
+          }
         }
         await socket.join(`video:${videoId}`);
         cb?.();
@@ -73,11 +86,19 @@ export function attachSocketServer(
       const evt = JSON.parse(message) as VideoSocketEvent;
       const room = `video:${evt.videoId}`;
       if (evt.type === 'processing_progress') {
-        io.to(room).emit('processing_progress', { progress: evt.progress, videoId: evt.videoId });
+        io.to(room).emit('processing_progress', {
+          progress: evt.progress,
+          stage: evt.stage,
+          videoId: evt.videoId,
+        });
       } else if (evt.type === 'processing_completed') {
-        io.to(room).emit('processing_completed', { videoId: evt.videoId });
+        io.to(room).emit('processing_completed', { videoId: evt.videoId, stage: evt.stage });
       } else if (evt.type === 'processing_failed') {
-        io.to(room).emit('processing_failed', { videoId: evt.videoId, error: evt.error });
+        io.to(room).emit('processing_failed', {
+          videoId: evt.videoId,
+          error: evt.error,
+          stage: evt.stage,
+        });
       }
     } catch {
       /* ignore malformed */

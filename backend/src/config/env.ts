@@ -19,6 +19,8 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   /** Public API base URL used in presigned upload instructions for local storage (e.g. http://localhost:4000). */
   PUBLIC_API_URL: z.string().url().default('http://localhost:4000'),
+  /** Public web URL used to build invite links (e.g. http://localhost:5173). */
+  PUBLIC_WEB_URL: z.string().url().default('http://localhost:5173'),
   /** Directory for uploaded video files (created at runtime if missing). */
   UPLOAD_DIR: z.string().default('uploads'),
   /** `local` = disk + dev presigned simulation; `s3` = real presigned URLs when bucket is configured. */
