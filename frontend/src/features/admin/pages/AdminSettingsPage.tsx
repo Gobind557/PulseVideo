@@ -1,57 +1,106 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useAppSelector } from '@/store/hooks';
+import { useGetOrgSettingsQuery, usePatchOrgSettingsMutation } from '@/lib/api/pulseApi';
+import type { OrgSettingsDto } from '@/lib/api/pulseApi';
 
 type SettingsForm = {
   organizationName: string;
-  defaultRole: 'viewer' | 'editor' | 'admin';
+  defaultRole: OrgSettingsDto['defaultRoleForNewUsers'];
   maxVideoFileSizeMb: number;
   allowedFormats: string;
-  sensitivityLevel: 'low' | 'medium' | 'high';
+  sensitivityLevel: OrgSettingsDto['sensitivityLevel'];
   automaticProcessing: boolean;
 };
 
-const STORAGE_KEY = 'pulse.admin.settings.v1';
-
-function getInitialSettings(): SettingsForm {
-  const raw = sessionStorage.getItem(STORAGE_KEY);
-  if (raw) {
-    try {
-      return JSON.parse(raw) as SettingsForm;
-    } catch {
-      // ignore invalid local data
-    }
-  }
+function dtoToForm(d: OrgSettingsDto): SettingsForm {
   return {
-    organizationName: 'Acme Corp',
-    defaultRole: 'viewer',
-    maxVideoFileSizeMb: 500,
-    allowedFormats: 'MP4, MOV',
-    sensitivityLevel: 'medium',
-    automaticProcessing: true,
+    organizationName: d.name,
+    defaultRole: d.defaultRoleForNewUsers,
+    maxVideoFileSizeMb: d.maxVideoFileSizeMb,
+    allowedFormats: d.allowedFormats,
+    sensitivityLevel: d.sensitivityLevel,
+    automaticProcessing: d.automaticProcessing,
   };
 }
 
 export default function AdminSettingsPage() {
-  const [form, setForm] = useState<SettingsForm>(getInitialSettings);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
-  const dirty = useMemo(() => {
-    const snapshot = sessionStorage.getItem(STORAGE_KEY);
-    if (!snapshot) return true;
-    return snapshot !== JSON.stringify(form);
-  }, [form]);
+  const orgId = useAppSelector((s) => s.auth.organizationId);
+  const { data, isLoading, isError, refetch } = useGetOrgSettingsQuery(
+    { orgId: orgId ?? '' },
+    { skip: !orgId }
+  );
+  const [patch, { isLoading: isSaving }] = usePatchOrgSettingsMutation();
 
-  const save = () => {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(form));
-    setSavedAt(new Date().toLocaleTimeString());
+  const [form, setForm] = useState<SettingsForm | null>(null);
+  const [baseline, setBaseline] = useState<SettingsForm | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (data) {
+      const next = dtoToForm(data);
+      setForm(next);
+      setBaseline(next);
+      setSavedAt(null);
+      setSaveError(null);
+    }
+  }, [data]);
+
+  const dirty = useMemo(() => {
+    if (!form || !baseline) {
+      return false;
+    }
+    return JSON.stringify(form) !== JSON.stringify(baseline);
+  }, [form, baseline]);
+
+  const save = async () => {
+    if (!orgId || !form) {
+      return;
+    }
+    setSaveError(null);
+    try {
+      const updated = await patch({
+        orgId,
+        name: form.organizationName,
+        defaultRoleForNewUsers: form.defaultRole,
+        maxVideoFileSizeMb: form.maxVideoFileSizeMb,
+        allowedFormats: form.allowedFormats,
+        sensitivityLevel: form.sensitivityLevel,
+        automaticProcessing: form.automaticProcessing,
+      }).unwrap();
+      const next = dtoToForm(updated);
+      setForm(next);
+      setBaseline(next);
+      setSavedAt(new Date().toLocaleTimeString());
+      void refetch();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Save failed');
+    }
   };
+
+  if (!orgId) {
+    return <p>Missing organization ID.</p>;
+  }
+  if (isLoading || !form) {
+    return <p>Loading settings…</p>;
+  }
+  if (isError) {
+    return <p className="error">Could not load organization settings.</p>;
+  }
 
   return (
     <div className="settings-page">
       <div className="settings-header">
         <h1>System Settings</h1>
-        <button className="btn btn-primary" disabled={!dirty} onClick={save}>
-          Save Changes
+        <button className="btn btn-primary" disabled={!dirty || isSaving} onClick={() => void save()}>
+          {isSaving ? 'Saving…' : 'Save Changes'}
         </button>
       </div>
+      {saveError ? (
+        <p className="error" role="alert">
+          {saveError}
+        </p>
+      ) : null}
       {savedAt ? <p className="hint">Saved at {savedAt}</p> : null}
       <p className="hint">
         Configure organization-wide settings and defaults for your application.
@@ -63,7 +112,7 @@ export default function AdminSettingsPage() {
           Organization Name
           <input
             value={form.organizationName}
-            onChange={(e) => setForm((prev) => ({ ...prev, organizationName: e.target.value }))}
+            onChange={(e) => setForm((prev) => (prev ? { ...prev, organizationName: e.target.value } : prev))}
           />
         </label>
         <label>
@@ -71,7 +120,11 @@ export default function AdminSettingsPage() {
           <select
             value={form.defaultRole}
             onChange={(e) =>
-              setForm((prev) => ({ ...prev, defaultRole: e.target.value as SettingsForm['defaultRole'] }))
+              setForm((prev) =>
+                prev
+                  ? { ...prev, defaultRole: e.target.value as SettingsForm['defaultRole'] }
+                  : prev
+              )
             }
           >
             <option value="viewer">Viewer</option>
@@ -85,13 +138,15 @@ export default function AdminSettingsPage() {
         <h3>Security Settings</h3>
         <div className="settings-grid">
           <label>
-            Max Video File Size
+            Max Video File Size (MB)
             <input
               type="number"
               min={1}
               value={form.maxVideoFileSizeMb}
               onChange={(e) =>
-                setForm((prev) => ({ ...prev, maxVideoFileSizeMb: Number(e.target.value) || 1 }))
+                setForm((prev) =>
+                  prev ? { ...prev, maxVideoFileSizeMb: Number(e.target.value) || 1 } : prev
+                )
               }
             />
           </label>
@@ -99,7 +154,7 @@ export default function AdminSettingsPage() {
             Allowed Video Formats
             <input
               value={form.allowedFormats}
-              onChange={(e) => setForm((prev) => ({ ...prev, allowedFormats: e.target.value }))}
+              onChange={(e) => setForm((prev) => (prev ? { ...prev, allowedFormats: e.target.value } : prev))}
             />
           </label>
         </div>
@@ -113,10 +168,14 @@ export default function AdminSettingsPage() {
             <select
               value={form.sensitivityLevel}
               onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  sensitivityLevel: e.target.value as SettingsForm['sensitivityLevel'],
-                }))
+                setForm((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        sensitivityLevel: e.target.value as SettingsForm['sensitivityLevel'],
+                      }
+                    : prev
+                )
               }
             >
               <option value="low">Low</option>
@@ -129,7 +188,9 @@ export default function AdminSettingsPage() {
             <select
               value={form.automaticProcessing ? 'On' : 'Off'}
               onChange={(e) =>
-                setForm((prev) => ({ ...prev, automaticProcessing: e.target.value === 'On' }))
+                setForm((prev) =>
+                  prev ? { ...prev, automaticProcessing: e.target.value === 'On' } : prev
+                )
               }
             >
               <option value="On">On</option>
@@ -141,4 +202,3 @@ export default function AdminSettingsPage() {
     </div>
   );
 }
-

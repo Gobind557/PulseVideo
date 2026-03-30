@@ -34,9 +34,23 @@ export type PresignedUploadResponse = {
 
 export type CreateOrgInviteBody = {
   orgId: string;
-  role: MembershipRole;
+  /** Omit to use the org's "default role for new users" setting. */
+  role?: MembershipRole;
   email?: string;
 };
+
+export type OrgSettingsDto = {
+  name: string;
+  defaultRoleForNewUsers: MembershipRole;
+  maxVideoFileSizeMb: number;
+  allowedFormats: string;
+  sensitivityLevel: 'low' | 'medium' | 'high';
+  automaticProcessing: boolean;
+};
+
+export type PatchOrgSettingsBody = Partial<
+  Omit<OrgSettingsDto, 'name'> & { name?: string }
+>;
 
 export type CreateOrgInviteResponse = {
   inviteToken: string;
@@ -54,7 +68,7 @@ export type CreateOrgInviteResponse = {
 export const pulseApi = createApi({
   reducerPath: 'pulseApi',
   baseQuery: createBaseQueryWithReauth(),
-  tagTypes: ['Video', 'Membership'],
+  tagTypes: ['Video', 'Membership', 'OrgSettings'],
   endpoints: (build) => ({
     login: build.mutation({
       query: (body: LoginBody) => ({
@@ -219,6 +233,23 @@ export const pulseApi = createApi({
       invalidatesTags: (_r, _e, arg) => [{ type: 'Video', id: `ASSIGNEES-${arg.videoId}` }],
     }),
 
+    getOrgSettings: build.query<OrgSettingsDto, { orgId: string }>({
+      query: ({ orgId }) => `/orgs/${orgId}/settings`,
+      providesTags: (_r, _e, arg) => [{ type: 'OrgSettings', id: arg.orgId }],
+    }),
+
+    patchOrgSettings: build.mutation<
+      OrgSettingsDto,
+      { orgId: string } & PatchOrgSettingsBody
+    >({
+      query: ({ orgId, ...body }) => ({
+        url: `/orgs/${orgId}/settings`,
+        method: 'PATCH',
+        body,
+      }),
+      invalidatesTags: (_r, _e, arg) => [{ type: 'OrgSettings', id: arg.orgId }],
+    }),
+
     getOrgMembers: build.query<
       OrgMemberDto[],
       { orgId: string }
@@ -296,4 +327,6 @@ export const {
   useChangeMemberRoleMutation,
   useRemoveOrgMemberMutation,
   useCreateOrgInviteMutation,
+  useGetOrgSettingsQuery,
+  usePatchOrgSettingsMutation,
 } = pulseApi;

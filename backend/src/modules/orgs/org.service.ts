@@ -4,7 +4,11 @@ import {
   type MembershipLean,
   type MembershipRole,
 } from '../../infrastructure/db/models/membership.model.js';
-import { OrganizationModel } from '../../infrastructure/db/models/organization.model.js';
+import {
+  DEFAULT_ORG_SETTINGS,
+  OrganizationModel,
+  type OrgSettings,
+} from '../../infrastructure/db/models/organization.model.js';
 import { RefreshTokenModel } from '../../infrastructure/db/models/refresh-token.model.js';
 import { UserModel } from '../../infrastructure/db/models/user.model.js';
 import { OrgInviteModel } from '../../infrastructure/db/models/org-invite.model.js';
@@ -191,10 +195,13 @@ export class OrgService {
     requesterOrganizationId: string;
     orgIdParam: string;
     email?: string;
-    role: MembershipRole;
+    role?: MembershipRole;
   }): Promise<{ inviteToken: string; expiresAt: string; organizationId: string; role: MembershipRole; email?: string }> {
     const { requesterUserId, requesterOrganizationId, orgIdParam, email, role } = args;
     this.assertOrgMatch(requesterOrganizationId, orgIdParam);
+
+    const settings = await this.getOrgSettingsById(requesterOrganizationId);
+    const resolvedRole = role ?? settings.defaultRoleForNewUsers;
 
     const inviteToken = crypto.randomBytes(24).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(inviteToken).digest('hex');
@@ -203,7 +210,7 @@ export class OrgService {
     await OrgInviteModel.create({
       organizationId: requesterOrganizationId,
       email: email ?? null,
-      role,
+      role: resolvedRole,
       tokenHash,
       expiresAt,
       createdBy: requesterUserId,
@@ -214,7 +221,7 @@ export class OrgService {
       inviteToken,
       expiresAt: expiresAt.toISOString(),
       organizationId: requesterOrganizationId,
-      role,
+      role: resolvedRole,
       ...(email ? { email } : {}),
     };
   }
@@ -269,5 +276,83 @@ export class OrgService {
     });
 
     return { organizationId, role: invite.role };
+  }
+
+  async getOrgSettings(args: {
+    requesterOrganizationId: string;
+    orgIdParam: string;
+  }): Promise<{ name: string } & OrgSettings> {
+    const { requesterOrganizationId, orgIdParam } = args;
+    this.assertOrgMatch(requesterOrganizationId, orgIdParam);
+    const org = await OrganizationModel.findById(orgIdParam).lean<{
+      name: string;
+      settings?: Partial<OrgSettings> | null;
+    } | null>();
+    if (!org) {
+      throw new NotFoundError('Organization not found');
+    }
+    const s = org.settings ?? {};
+    return {
+      name: org.name,
+      ...DEFAULT_ORG_SETTINGS,
+      ...s,
+    };
+  }
+
+  async updateOrgSettings(args: {
+    requesterOrganizationId: string;
+    orgIdParam: string;
+    patch: Partial<OrgSettings> & { name?: string };
+  }): Promise<{ name: string } & OrgSettings> {
+    const { requesterOrganizationId, orgIdParam, patch } = args;
+    this.assertOrgMatch(requesterOrganizationId, orgIdParam);
+
+    const setDoc: Record<string, unknown> = {};
+    if (patch.name != null && patch.name.trim() !== '') {
+      setDoc.name = patch.name.trim();
+    }
+    const settingsKeys: (keyof OrgSettings)[] = [
+      'defaultRoleForNewUsers',
+      'maxVideoFileSizeMb',
+      'allowedFormats',
+      'sensitivityLevel',
+      'automaticProcessing',
+    ];
+    for (const k of settingsKeys) {
+      const v = patch[k];
+      if (v !== undefined) {
+        setDoc[`settings.${k}`] = v;
+      }
+    }
+
+    if (Object.keys(setDoc).length === 0) {
+      return this.getOrgSettings({ requesterOrganizationId, orgIdParam });
+    }
+
+    const updated = await OrganizationModel.findByIdAndUpdate(
+      orgIdParam,
+      { $set: setDoc },
+      { new: true, runValidators: true }
+    ).lean<{ name: string; settings?: Partial<OrgSettings> | null } | null>();
+
+    if (!updated) {
+      throw new NotFoundError('Organization not found');
+    }
+    const s = updated.settings ?? {};
+    return {
+      name: updated.name,
+      ...DEFAULT_ORG_SETTINGS,
+      ...s,
+    };
+  }
+
+  async getOrgSettingsById(organizationId: string): Promise<OrgSettings> {
+    const org = await OrganizationModel.findById(organizationId).lean<{
+      settings?: Partial<OrgSettings> | null;
+    } | null>();
+    if (!org) {
+      return DEFAULT_ORG_SETTINGS;
+    }
+    return { ...DEFAULT_ORG_SETTINGS, ...(org.settings ?? {}) };
   }
 }

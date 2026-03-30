@@ -11,6 +11,10 @@
     {
       "source": "/socket.io/(.*)",
       "destination": "https://pulsevideo-production.up.railway.app/socket.io/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }

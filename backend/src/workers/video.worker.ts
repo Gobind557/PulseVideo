@@ -13,6 +13,7 @@ import {
 } from '../infrastructure/queue/video-processing.queue.js';
 import { getStorageProvider } from '../infrastructure/storage/get-storage-provider.js';
 import { MockSensitivityAnalyzer } from '../infrastructure/sensitivity/sensitivity-analyzer.js';
+import { OrganizationModel } from '../infrastructure/db/models/organization.model.js';
 import { publishVideoEvent } from '../infrastructure/socket/video-event-bus.js';
 
 /**
@@ -94,7 +95,11 @@ async function main() {
           { _id: videoId, organizationId },
           { $set: { processingProgress: 70, processingStage: 'analyzing' } }
         );
-        const sens = await sensitivity.analyze(meta);
+        const orgDoc = await OrganizationModel.findById(organizationId)
+          .select({ settings: 1 })
+          .lean<{ settings?: { sensitivityLevel?: 'low' | 'medium' | 'high' } } | null>();
+        const sensitivityLevel = orgDoc?.settings?.sensitivityLevel ?? 'medium';
+        const sens = await sensitivity.analyze(meta, sensitivityLevel);
 
         await VideoModel.updateOne(
           { _id: videoId, organizationId },

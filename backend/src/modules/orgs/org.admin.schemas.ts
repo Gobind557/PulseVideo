@@ -22,6 +22,18 @@ export const changeMemberRoleBodySchema = z.object({
 
 export const createInviteBodySchema = z.object({
   email: z.string().email().optional(),
-  role: z.enum(MEMBERSHIP_ROLE_ORDER).default('viewer') as z.ZodType<MembershipRole>,
+  /** When omitted, the organization's "default role for new users" setting is used. */
+  role: z.enum(MEMBERSHIP_ROLE_ORDER).optional() as z.ZodType<MembershipRole | undefined>,
+});
+
+export const patchOrgSettingsBodySchema = z.object({
+  name: z.string().min(1).max(200).trim().optional(),
+  defaultRoleForNewUsers: z.enum(MEMBERSHIP_ROLE_ORDER).optional() as z.ZodType<
+    MembershipRole | undefined
+  >,
+  maxVideoFileSizeMb: z.number().int().min(1).max(10240).optional(),
+  allowedFormats: z.string().max(500).optional(),
+  sensitivityLevel: z.enum(['low', 'medium', 'high']).optional(),
+  automaticProcessing: z.boolean().optional(),
 });
 

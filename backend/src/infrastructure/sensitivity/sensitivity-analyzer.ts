@@ -8,13 +8,23 @@ export type SensitivityResult = {
 /**
  * Pluggable sensitivity / moderation hook (vendor SDKs, internal models, rules).
  */
+export type SensitivityLevel = 'low' | 'medium' | 'high';
+
 export interface SensitivityAnalyzer {
-  analyze(metadata: { durationSec?: number; width?: number; height?: number }): Promise<SensitivityResult>;
+  analyze(
+    metadata: { durationSec?: number; width?: number; height?: number },
+    sensitivityLevel?: SensitivityLevel
+  ): Promise<SensitivityResult>;
 }
 
 export class MockSensitivityAnalyzer implements SensitivityAnalyzer {
-  async analyze(metadata: { durationSec?: number }): Promise<SensitivityResult> {
-    if (metadata.durationSec != null && metadata.durationSec > 3600) {
+  async analyze(
+    metadata: { durationSec?: number },
+    sensitivityLevel: SensitivityLevel = 'medium'
+  ): Promise<SensitivityResult> {
+    const thresholdSec =
+      sensitivityLevel === 'low' ? 7200 : sensitivityLevel === 'high' ? 1800 : 3600;
+    if (metadata.durationSec != null && metadata.durationSec > thresholdSec) {
       return { safetyStatus: 'pending_review', notes: 'long_duration' };
     }
     return { safetyStatus: 'safe' };

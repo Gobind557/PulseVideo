@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import type { Env } from '../../config/env.js';
-import { authenticateJWT } from '../../middleware/authenticate.js';
+import { authenticateJWT, authenticateJWTBearerOrQuery } from '../../middleware/authenticate.js';
 import { requireRole } from '../../middleware/requireRole.js';
 import { validateBody, validateQuery } from '../../middleware/validate.js';
 import { VideoController } from './video.controller.js';
@@ -17,13 +17,18 @@ import {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 500 * 1024 * 1024 },
+  /** Hard cap; per-org limits are enforced in VideoService (see org settings maxVideoFileSizeMb). */
+  limits: { fileSize: 10240 * 1024 * 1024 },
 });
 
 export function createVideoRouter(env: Env, videoService: VideoService): Router {
   const router = Router();
   const auth = authenticateJWT(env);
+  const authStream = authenticateJWTBearerOrQuery(env);
   const ctrl = new VideoController(videoService);
+
+  /** Native `<video src>` cannot send Authorization; allow JWT via `?access_token=` for Range streaming. */
+  router.get('/:id/stream', authStream, requireRole('viewer'), ctrl.stream);
 
   router.use(auth);
 
@@ -47,7 +52,6 @@ export function createVideoRouter(env: Env, videoService: VideoService): Router 
     upload.single('file'),
     ctrl.presignedBlob
   );
-  router.get('/:id/stream', requireRole('viewer'), ctrl.stream);
   router.post('/:id/upload', requireRole('editor'), upload.single('file'), ctrl.multerUpload);
   router.post('/:id/retry', requireRole('editor'), ctrl.retry);
   router.patch('/:id', requireRole('editor'), validateBody(updateVideoBodySchema), ctrl.update);

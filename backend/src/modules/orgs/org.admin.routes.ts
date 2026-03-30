@@ -9,6 +9,7 @@ import {
   createInviteBodySchema,
   listMembersParamsSchema,
   memberRoleParamsSchema,
+  patchOrgSettingsBodySchema,
 } from './org.admin.schemas.js';
 import { OrgAdminController } from './org.admin.controller.js';
 
@@ -19,6 +20,19 @@ export function createOrgAdminRouter(env: Env, orgService: OrgService): Router {
 
   router.use(auth);
   router.use(requireRole('admin'));
+
+  router.get(
+    '/:orgId/settings',
+    validateParams(listMembersParamsSchema),
+    ctrl.getSettings
+  );
+
+  router.patch(
+    '/:orgId/settings',
+    validateParams(listMembersParamsSchema),
+    validateBody(patchOrgSettingsBodySchema),
+    ctrl.patchSettings
+  );
 
   router.get(
     '/:orgId/members',

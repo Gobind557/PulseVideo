@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import path from 'node:path';
 import type { Queue } from 'bullmq';
 import {
   PROCESS_VIDEO_JOB,
@@ -17,8 +18,55 @@ import type { MembershipRole } from '../../infrastructure/db/models/membership.m
 import { VideoAssignmentModel } from '../../infrastructure/db/models/video-assignment.model.js';
 import { AppError, ForbiddenError, NotFoundError, RangeNotSatisfiableError } from '../../shared/errors.js';
 import { parseByteRange } from '../../shared/http-range.js';
+import {
+  DEFAULT_ORG_SETTINGS,
+  OrganizationModel,
+  type OrgSettings,
+} from '../../infrastructure/db/models/organization.model.js';
 
 const UPLOAD_TOKEN_TTL_MS = 60 * 60 * 1000;
+
+async function loadOrgSettings(organizationId: string): Promise<OrgSettings> {
+  const org = await OrganizationModel.findById(organizationId).lean<{
+    settings?: Partial<OrgSettings> | null;
+  } | null>();
+  return { ...DEFAULT_ORG_SETTINGS, ...(org?.settings ?? {}) };
+}
+
+function assertUploadSizeBytes(size: number, maxMb: number): void {
+  const maxBytes = maxMb * 1024 * 1024;
+  if (size > maxBytes) {
+    throw new AppError('VALIDATION_ERROR', 'File exceeds organization maximum size', 400, {
+      maxVideoFileSizeMb: maxMb,
+    });
+  }
+}
+
+function assertAllowedVideoFile(originalname: string, mimetype: string, allowedFormatsCsv: string): void {
+  const tokens = allowedFormatsCsv
+    .split(/[,;]+/)
+    .map((s) => s.trim().toLowerCase().replace(/^\./, ''))
+    .filter(Boolean);
+  if (tokens.length === 0) {
+    return;
+  }
+  const ext = path.extname(originalname).slice(1).toLowerCase();
+  const mime = (mimetype || '').toLowerCase();
+  const ok = tokens.some((t) => {
+    if (ext && t === ext) {
+      return true;
+    }
+    if (mime.includes(t)) {
+      return true;
+    }
+    return false;
+  });
+  if (!ok) {
+    throw new AppError('VALIDATION_ERROR', 'Video format not allowed for this organization', 400, {
+      allowedFormats: allowedFormatsCsv,
+    });
+  }
+}
 
 /**
  * All tenant boundaries: every query includes organizationId from auth context — never from raw client org fields.
@@ -103,7 +151,13 @@ export class VideoService {
         },
       }
     );
-    await this.enqueueProcessing(videoId, organizationId);
+    const { size } = await this.storage.stat(organizationId, storageKey);
+    const basename = path.basename(storageKey);
+    await this.finalizeAfterUpload(organizationId, videoId, {
+      sizeBytes: size,
+      originalname: basename,
+      mimetype: (video.metadata as VideoMetadata)?.mimeType ?? 'video/mp4',
+    });
   }
 
   async saveMulterUpload(
@@ -128,7 +182,11 @@ export class VideoService {
       { _id: videoId, organizationId },
       { $set: { storagePath: storageKey, metadata } }
     );
-    await this.enqueueProcessing(videoId, organizationId);
+    await this.finalizeAfterUpload(organizationId, videoId, {
+      sizeBytes: file.size,
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+    });
     return { videoId, storageKey };
   }
 
@@ -173,7 +231,11 @@ export class VideoService {
         },
       }
     );
-    await this.enqueueProcessing(videoId, organizationId);
+    await this.finalizeAfterUpload(organizationId, videoId, {
+      sizeBytes: file.size,
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+    });
     return { videoId, storageKey };
   }
 
@@ -444,6 +506,32 @@ export class VideoService {
     }).lean();
     if (!assignment) {
       throw new ForbiddenError('Video not assigned to viewer');
+    }
+  }
+
+  private async finalizeAfterUpload(
+    organizationId: string,
+    videoId: string,
+    args: { sizeBytes: number; originalname: string; mimetype: string }
+  ): Promise<void> {
+    const orgSettings = await loadOrgSettings(organizationId);
+    assertUploadSizeBytes(args.sizeBytes, orgSettings.maxVideoFileSizeMb);
+    assertAllowedVideoFile(args.originalname, args.mimetype, orgSettings.allowedFormats);
+
+    if (orgSettings.automaticProcessing) {
+      await this.enqueueProcessing(videoId, organizationId);
+    } else {
+      await VideoModel.updateOne(
+        { _id: videoId, organizationId },
+        {
+          $set: {
+            status: 'pending',
+            processingStage: 'awaiting_manual',
+            processingProgress: null,
+            lastJobId: null,
+          },
+        }
+      );
     }
   }
 

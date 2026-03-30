@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAppSelector } from '@/store/hooks';
 
 type Props = {
@@ -6,50 +6,25 @@ type Props = {
 };
 
 /**
- * Fetches full stream with Authorization. Fine for dev / small files;
- * production usually uses short-lived URLs or HLS.
+ * Uses native `<video src>` with a JWT in the query string so the browser can issue
+ * Range requests for progressive streaming (no full-file blob download).
  */
 export function VideoPlayer({ videoId }: Props) {
   const token = useAppSelector((s) => s.auth.accessToken);
-  const [src, setSrc] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
+  const src = useMemo(() => {
     if (!token) {
-      return;
+      return null;
     }
-    let objectUrl: string | null = null;
-    const ac = new AbortController();
-    const run = async () => {
-      try {
-        setErr(null);
-        const res = await fetch(`/api/videos/${videoId}/stream`, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: ac.signal,
-        });
-        if (!res.ok) {
-          setErr(`Stream failed (${res.status})`);
-          return;
-        }
-        const blob = await res.blob();
-        objectUrl = URL.createObjectURL(blob);
-        setSrc(objectUrl);
-      } catch (e) {
-        if ((e as Error).name === 'AbortError') {
-          return;
-        }
-        setErr('Could not load video');
-      }
-    };
-    void run();
-    return () => {
-      ac.abort();
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
+    const u = new URL(`/api/videos/${videoId}/stream`, window.location.origin);
+    u.searchParams.set('access_token', token);
+    return u.toString();
   }, [token, videoId]);
 
+  if (!token) {
+    return <p className="error">Sign in to play video</p>;
+  }
   if (err) {
     return <p className="error">{err}</p>;
   }
@@ -57,5 +32,14 @@ export function VideoPlayer({ videoId }: Props) {
     return <p>Loading player…</p>;
   }
 
-  return <video className="video-player" src={src} controls playsInline width="100%" />;
+  return (
+    <video
+      className="video-player"
+      src={src}
+      controls
+      playsInline
+      width="100%"
+      onError={() => setErr('Could not load video stream')}
+    />
+  );
 }
