@@ -155,4 +155,20 @@ export class VideoController {
       next(e);
     }
   };
+
+  retry = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user!;
+      const id = paramId(req.params.id);
+      await this.videoService.retryProcessing({
+        organizationId: user.organizationId,
+        videoId: id,
+        requesterUserId: user.userId,
+        requesterRole: user.role,
+      });
+      res.status(204).send();
+    } catch (e) {
+      next(e);
+    }
+  };
 }

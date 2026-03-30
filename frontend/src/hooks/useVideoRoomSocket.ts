@@ -34,7 +34,12 @@ export function useVideoRoomSocket(
     };
 
     const invalidate = () => {
-      dispatch(pulseApi.util.invalidateTags([{ type: 'Video', id: videoId }, 'Video']));
+      dispatch(
+        pulseApi.util.invalidateTags([
+          { type: 'Video', id: videoId },
+          { type: 'Video', id: 'LIST' },
+        ])
+      );
     };
 
     const onDone = (payload: { videoId: string }) => {

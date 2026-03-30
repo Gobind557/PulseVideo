@@ -47,6 +47,7 @@ export function createVideoRouter(env: Env, videoService: VideoService): Router 
   );
   router.get('/:id/stream', requireRole('viewer'), ctrl.stream);
   router.post('/:id/upload', requireRole('editor'), upload.single('file'), ctrl.multerUpload);
+  router.post('/:id/retry', requireRole('editor'), ctrl.retry);
   router.get('/:id', requireRole('viewer'), ctrl.get);
 
   return router;

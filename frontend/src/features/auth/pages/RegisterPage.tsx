@@ -38,63 +38,90 @@ export function RegisterPage() {
 
   if (doneOrgId) {
     return (
-      <div className="auth-page">
-        <h1>Welcome to Pulse</h1>
-        <p>
-          Save this <strong>organization ID</strong> for signing in on other browsers:
-        </p>
-        <pre className="org-id">{doneOrgId}</pre>
-        <button type="button" onClick={() => navigate('/dashboard', { replace: true })}>
-          Go to dashboard
-        </button>
+      <div className="auth-shell">
+        <div className="auth-grid" style={{ gridTemplateColumns: '1fr' }}>
+          <div className="auth-card">
+            <h2 className="auth-title">Welcome to Pulse</h2>
+            <p className="hint">
+              Save this <strong>organization ID</strong> for signing in on other
+              browsers:
+            </p>
+            <pre className="org-id">{doneOrgId}</pre>
+            <div className="auth-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => navigate('/dashboard', { replace: true })}
+              >
+                Go to dashboard
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="auth-page">
-      <h1>Register</h1>
-      <p className="hint">
-        You will need your organization ID when signing in elsewhere (shown after signup).
-      </p>
-      <form onSubmit={onSubmit}>
-        <label>
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(ev) => setEmail(ev.target.value)}
-            required
-          />
-        </label>
-        <label>
-          Password (min 8)
-          <input
-            type="password"
-            value={password}
-            onChange={(ev) => setPassword(ev.target.value)}
-            minLength={8}
-            required
-          />
-        </label>
-        <label>
-          Organization name
-          <input
-            value={organizationName}
-            onChange={(ev) => setOrganizationName(ev.target.value)}
-            required
-          />
-        </label>
-        <button type="submit" disabled={isLoading}>
-          {isLoading ? 'Creating…' : 'Create account'}
-        </button>
-      </form>
-      {error != null ? (
-        <p className="error">Registration failed (email may be taken).</p>
-      ) : null}
-      <p>
-        <Link to="/login">Already have an account?</Link>
-      </p>
+    <div className="auth-shell">
+      <div className="auth-grid" style={{ gridTemplateColumns: '1fr' }}>
+        <div className="auth-card">
+          <h2 className="auth-title">Create an account</h2>
+          <p className="hint">
+            Sign up to start processing and managing your videos.
+          </p>
+
+          <form className="auth-form" onSubmit={onSubmit}>
+            <label>
+              Email
+              <input
+                type="email"
+                value={email}
+                onChange={(ev) => setEmail(ev.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Password (min 8)
+              <input
+                type="password"
+                value={password}
+                onChange={(ev) => setPassword(ev.target.value)}
+                minLength={8}
+                required
+              />
+            </label>
+            <label>
+              Organization name
+              <input
+                value={organizationName}
+                onChange={(ev) => setOrganizationName(ev.target.value)}
+                required
+              />
+            </label>
+
+            <div className="auth-actions">
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Creating…' : 'Create account'}
+              </button>
+            </div>
+          </form>
+
+          {error != null ? (
+            <p className="error">Registration failed (email may be taken).</p>
+          ) : null}
+
+          <div className="auth-actions">
+            <Link to="/login" className="btn btn-secondary">
+              Go to sign in
+            </Link>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

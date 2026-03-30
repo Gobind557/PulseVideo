@@ -140,6 +140,17 @@ export const pulseApi = createApi({
       ],
     }),
 
+    retryVideo: build.mutation<void, { videoId: string }>({
+      query: ({ videoId }) => ({
+        url: `/videos/${videoId}/retry`,
+        method: 'POST',
+      }),
+      invalidatesTags: (_r, _e, arg) => [
+        { type: 'Video', id: arg.videoId },
+        { type: 'Video', id: 'LIST' },
+      ],
+    }),
+
     getOrgMembers: build.query<
       OrgMemberDto[],
       { orgId: string }
@@ -198,6 +209,7 @@ export const {
   useRequestPresignedUploadMutation,
   useCompletePresignedUploadMutation,
   useUploadVideoMulterMutation,
+  useRetryVideoMutation,
   useGetOrgMembersQuery,
   useChangeMemberRoleMutation,
   useRemoveOrgMemberMutation,

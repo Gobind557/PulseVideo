@@ -11,7 +11,8 @@ import {
   type VideoLean,
   type VideoMetadata,
 } from '../../infrastructure/db/models/video.model.js';
-import { AppError, NotFoundError, RangeNotSatisfiableError } from '../../shared/errors.js';
+import type { MembershipRole } from '../../infrastructure/db/models/membership.model.js';
+import { AppError, ForbiddenError, NotFoundError, RangeNotSatisfiableError } from '../../shared/errors.js';
 import { parseByteRange } from '../../shared/http-range.js';
 
 const UPLOAD_TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -256,6 +257,43 @@ export class VideoService {
       total,
       mimeType,
     };
+  }
+
+  async retryProcessing(args: {
+    organizationId: string;
+    videoId: string;
+    requesterUserId: string;
+    requesterRole: MembershipRole;
+  }): Promise<void> {
+    const { organizationId, videoId, requesterUserId, requesterRole } = args;
+    const video = await VideoModel.findOne({ _id: videoId, organizationId }).lean<
+      VideoLean | null
+    >();
+    if (!video) {
+      throw new NotFoundError('Video not found');
+    }
+
+    const isCreator = video.createdBy.toString() === requesterUserId;
+    const isAdmin = requesterRole === 'admin';
+    if (!isCreator && !isAdmin) {
+      throw new ForbiddenError('Insufficient permissions to retry this video');
+    }
+
+    if (video.status === 'completed') {
+      throw new AppError('FORBIDDEN', 'Video already completed', 403);
+    }
+
+    await VideoModel.updateOne(
+      { _id: videoId, organizationId },
+      {
+        $set: {
+          status: 'pending',
+          processingError: null,
+        },
+      }
+    );
+
+    await this.enqueueProcessing(videoId, organizationId);
   }
 
   private async enqueueProcessing(videoId: string, organizationId: string) {

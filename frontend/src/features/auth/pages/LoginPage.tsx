@@ -35,50 +35,64 @@ export function LoginPage() {
   };
 
   return (
-    <div className="auth-page">
-      <h1>Sign in</h1>
-      <form onSubmit={onSubmit}>
-        <label>
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(ev) => setEmail(ev.target.value)}
-            autoComplete="email"
-            required
-          />
-        </label>
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(ev) => setPassword(ev.target.value)}
-            autoComplete="current-password"
-            required
-          />
-        </label>
-        <label>
-          Organization ID
-          <input
-            value={organizationId}
-            onChange={(ev) => setOrganizationId(ev.target.value)}
-            placeholder="Mongo ObjectId from registration"
-            required
-          />
-        </label>
-        <button type="submit" disabled={isLoading}>
-          {isLoading ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
-      {error != null ? (
-        <p className="error" role="alert">
-          Could not sign in. Check credentials and organization.
-        </p>
-      ) : null}
-      <p>
-        <Link to="/register">Create account</Link>
-      </p>
+    <div className="auth-shell">
+      <div className="auth-grid" style={{ gridTemplateColumns: '1fr' }}>
+        <div className="auth-card">
+          <h2 className="auth-title">Sign in to Pulse</h2>
+          <p className="hint">Enter your credentials to access your account.</p>
+          <form className="auth-form" onSubmit={onSubmit}>
+            <label>
+              Email
+              <input
+                type="email"
+                value={email}
+                onChange={(ev) => setEmail(ev.target.value)}
+                autoComplete="email"
+                required
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={password}
+                onChange={(ev) => setPassword(ev.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </label>
+            <label>
+              Organization ID
+              <input
+                value={organizationId}
+                onChange={(ev) => setOrganizationId(ev.target.value)}
+                placeholder="Mongo ObjectId from registration"
+                required
+              />
+            </label>
+
+            <div className="auth-actions">
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Signing in…' : 'Sign in'}
+              </button>
+            </div>
+          </form>
+
+          {error != null ? (
+            <p className="error" role="alert">
+              Could not sign in. Check credentials and organization.
+            </p>
+          ) : null}
+
+          <Link className="auth-link" to="/register">
+            Don&apos;t have an account?
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }
