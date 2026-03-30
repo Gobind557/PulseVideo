@@ -17,6 +17,7 @@ import {
 import { registerAbort, releaseAbort } from '@/lib/upload/abortRegistry';
 import type { VideoDto } from '@/types/video';
 import { getVideoSocket } from '@/lib/socket/socket';
+import { getRtkQueryErrorMessage } from '@/lib/api/rtkErrorMessage';
 
 function DashboardContent() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -90,16 +91,21 @@ function DashboardContent() {
       releaseAbort(videoId);
       if (fileRef.current) fileRef.current.value = '';
     } catch (e) {
+      const message = getRtkQueryErrorMessage(
+        e,
+        videoId ? 'Upload failed' : 'Could not create video record'
+      );
       if (videoId) {
         dispatch(
           uploadFailed({
             videoId,
-            error: e instanceof Error ? e.message : 'Upload failed',
+            error: message,
           })
         );
+        setUploadError(message);
         releaseAbort(videoId);
       } else {
-        setUploadError('Could not create video record');
+        setUploadError(message);
       }
     }
   };
@@ -248,7 +254,9 @@ function DashboardContent() {
               <div className="upload-dropzone-subtitle">
                 Drag and drop or click to select your file
               </div>
-              <div className="upload-dropzone-meta">Max size: 500MB · MP4 · More info</div>
+              <div className="upload-dropzone-meta">
+                Max size and allowed formats follow your org settings (System Settings).
+              </div>
               <button
                 type="button"
                 className="btn btn-primary upload-dropzone-btn"

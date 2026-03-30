@@ -12,7 +12,7 @@ export type OrgSettings = {
 export const DEFAULT_ORG_SETTINGS: OrgSettings = {
   defaultRoleForNewUsers: 'viewer',
   maxVideoFileSizeMb: 500,
-  allowedFormats: 'MP4, MOV',
+  allowedFormats: 'MP4, MOV, WEBM',
   sensitivityLevel: 'medium',
   automaticProcessing: true,
 };
