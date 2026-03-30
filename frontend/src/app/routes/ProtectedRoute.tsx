@@ -27,3 +27,11 @@ export function RequireEditor({ children }: { children: React.ReactNode }) {
   }
   return children;
 }
+
+export function RequireAdmin({ children }: { children: React.ReactNode }) {
+  const role = useAppSelector((s) => s.auth.role);
+  if (role !== 'admin') {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return children;
+}

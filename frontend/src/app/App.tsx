@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { ProtectedRoute, RequireEditor } from '@/app/routes/ProtectedRoute';
+import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
+import { ProtectedRoute, RequireAdmin, RequireEditor } from '@/app/routes/ProtectedRoute';
 import { LoginPage } from '@/features/auth/pages/LoginPage';
 import { RegisterPage } from '@/features/auth/pages/RegisterPage';
 import { useDisconnectSocketOnLogout } from '@/hooks/useVideoRoomSocket';
@@ -10,10 +10,12 @@ import { logout as logoutAction } from '@/features/auth/authSlice';
 
 const DashboardPage = lazy(() => import('@/features/videos/pages/DashboardPage'));
 const VideoDetailPage = lazy(() => import('@/features/videos/pages/VideoDetailPage'));
+const AdminMembersPage = lazy(() => import('@/features/admin/pages/AdminMembersPage'));
 
 function Shell({ children }: { children: React.ReactNode }) {
   const token = useAppSelector((s) => s.auth.accessToken);
   const refreshToken = useAppSelector((s) => s.auth.refreshToken);
+  const role = useAppSelector((s) => s.auth.role);
   const dispatch = useAppDispatch();
   const [logoutApi] = useLogoutMutation();
 
@@ -34,6 +36,10 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="app-shell">
       {token && (
         <nav className="top-nav">
+          <div className="nav-links">
+            <Link to="/dashboard">Dashboard</Link>
+            {role === 'admin' ? <Link to="/admin">Admin</Link> : null}
+          </div>
           <button type="button" onClick={() => void doLogout()}>
             Log out
           </button>
@@ -75,6 +81,16 @@ export function App() {
                   <RequireEditor>
                     <Navigate to="/dashboard" replace />
                   </RequireEditor>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute>
+                  <RequireAdmin>
+                    <AdminMembersPage />
+                  </RequireAdmin>
                 </ProtectedRoute>
               }
             />

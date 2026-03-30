@@ -30,3 +30,17 @@ export function validateQuery<T>(schema: ZodSchema<T>): RequestHandler {
     next();
   };
 }
+
+export function validateParams<T>(schema: ZodSchema<T>): RequestHandler {
+  return (req, _res, next) => {
+    const parsed = schema.safeParse(req.params);
+    if (!parsed.success) {
+      next(
+        new AppError('VALIDATION_ERROR', 'Validation failed', 422, parsed.error.flatten())
+      );
+      return;
+    }
+    req.params = parsed.data as typeof req.params;
+    next();
+  };
+}

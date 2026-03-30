@@ -1,6 +1,8 @@
 import { createApi } from '@reduxjs/toolkit/query/react';
 import type { VideoDto } from '@/types/video';
+import type { OrgMemberDto } from '@/types/membership';
 import { createBaseQueryWithReauth } from './baseQueryWithReauth';
+import type { MembershipRole } from '@/types/video';
 
 export type LoginBody = {
   email: string;
@@ -31,7 +33,7 @@ export type PresignedUploadResponse = {
 export const pulseApi = createApi({
   reducerPath: 'pulseApi',
   baseQuery: createBaseQueryWithReauth(),
-  tagTypes: ['Video'],
+  tagTypes: ['Video', 'Membership'],
   endpoints: (build) => ({
     login: build.mutation({
       query: (body: LoginBody) => ({
@@ -137,6 +139,52 @@ export const pulseApi = createApi({
         { type: 'Video', id: 'LIST' },
       ],
     }),
+
+    getOrgMembers: build.query<
+      OrgMemberDto[],
+      { orgId: string }
+    >({
+      query: ({ orgId }) => `/orgs/${orgId}/members`,
+      providesTags: (result, _err, arg) =>
+        result
+          ? [
+              { type: 'Membership' as const, id: `LIST-${arg.orgId}` },
+              ...result.map((m) => ({
+                type: 'Membership' as const,
+                id: `MEM-${arg.orgId}-${m.userId}`,
+              })),
+            ]
+          : [{ type: 'Membership', id: `LIST-${arg.orgId}` }],
+    }),
+
+    changeMemberRole: build.mutation<
+      void,
+      { orgId: string; userId: string; role: MembershipRole }
+    >({
+      query: ({ orgId, userId, role }) => ({
+        url: `/orgs/${orgId}/members/${userId}/role`,
+        method: 'PATCH',
+        body: { role },
+      }),
+      invalidatesTags: (_r, _e, arg) => [
+        { type: 'Membership', id: `LIST-${arg.orgId}` },
+        { type: 'Membership', id: `MEM-${arg.orgId}-${arg.userId}` },
+      ],
+    }),
+
+    removeOrgMember: build.mutation<
+      void,
+      { orgId: string; userId: string }
+    >({
+      query: ({ orgId, userId }) => ({
+        url: `/orgs/${orgId}/members/${userId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: (_r, _e, arg) => [
+        { type: 'Membership', id: `LIST-${arg.orgId}` },
+        { type: 'Membership', id: `MEM-${arg.orgId}-${arg.userId}` },
+      ],
+    }),
   }),
 });
 
@@ -150,4 +198,7 @@ export const {
   useRequestPresignedUploadMutation,
   useCompletePresignedUploadMutation,
   useUploadVideoMulterMutation,
+  useGetOrgMembersQuery,
+  useChangeMemberRoleMutation,
+  useRemoveOrgMemberMutation,
 } = pulseApi;
