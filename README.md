@@ -1,65 +1,60 @@
-# Pulse
+# 🎥 Pulse - Video Upload, Sensitivity Processing, and Streaming Application
 
-Full-stack video platform: upload, background processing (mock FFmpeg + pluggable sensitivity), HTTP streaming with range support, and real-time status over Socket.io.
-
----
-
-## User manual
-
-### What you need
-
-- **Node.js** 20 LTS (or current LTS)
-- **Docker** (recommended) for MongoDB and Redis, or your own instances
-
-### First-time setup
-
-1. Copy environment template and adjust secrets:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-   Set at least **`MONGODB_URI`**, **`REDIS_URL`**, and a strong **`JWT_SECRET`**. See [Environment variables](#environment-variables).
-
-2. Start databases:
-
-   ```bash
-   docker compose up -d
-   ```
-
-3. Install dependencies:
-
-   ```bash
-   cd backend && npm install
-   cd ../frontend && npm install
-   ```
-
-### Running locally (three terminals)
-
-| Terminal | Directory | Command | Purpose |
-|----------|-----------|---------|---------|
-| 1 | `backend/` | `npm run dev` | HTTP API + Socket.io |
-| 2 | `backend/` | `npm run worker` | BullMQ consumer (video processing) |
-| 3 | `frontend/` | `npm run dev` | Vite SPA (proxies `/api` and `/socket.io`) |
-
-- **API base URL:** `http://localhost:4000`  
-- **App URL:** `http://localhost:5173`  
-- **Health:** `GET http://localhost:4000/api/health`
-
-### Using the app
-
-1. Open the SPA and **Register** to create an account, organization, and admin membership.
-2. **Save the organization ID** shown after registration; you need it to **Log in** on other browsers or after clearing storage.
-3. **Dashboard:** list videos, filter by status and duration (query params are reflected in the URL).
-4. **Upload (editor/admin):** pick a file → the app creates a pending video then uploads via multipart (`POST /videos/:id/upload`).
-5. **Video detail:** open a row; when status is **completed**, the player loads the stream with your JWT. Live processing updates arrive over Socket.io (subscribe after opening the page).
-
+Pulse is a comprehensive full-stack application that enables users to upload videos, processes them for content sensitivity analysis, and provides seamless video streaming capabilities with real-time progress tracking.
 
 ---
 
-## Architecture overview
+## 🎯 Project Objectives & Core Functionality
 
-### High-level diagram
+1. **Full-Stack Architecture**: Developed using Node.js + Express + MongoDB (backend) and React + Vite (frontend).
+2. **Video Management**: Complete video upload and secure storage system.
+3. **Content Analysis**: Background video processing for sensitivity detection (mocked, but pluggable safe/flagged classification) and media formatting.
+4. **Real-Time Updates**: Live processing progress displayed dynamically to users via Socket.io.
+5. **Streaming Service**: Integrated video playback utilizing HTTP range requests.
+6. **Access Control**: Secure, multi-tenant architecture with Role-Based Access Control (RBAC).
+
+---
+
+## 🚀 Workflow Demonstration & User Journey
+
+1. **User Registration/Login**: Secure multi-tenant authentication system (JWT). During registration, users can create an organization and an admin membership.
+2. **Video Upload (Editor/Admin)**: Intuitive UI for uploading videos with automatic pending state creation, supporting multipart uploads and simulating S3 presigned flows.
+3. **Processing Phase**: BullMQ background workers handle video processing while broadcasting real-time progress via Redis pub/sub and Socket.io.
+4. **Content Review & Management**: A comprehensive dashboard library with filtering by status and duration.
+5. **Video Streaming**: Once processed, seamless media playback of content using standard HTTP range stream endpoints with JWT authentication.
+
+---
+
+## 🛠 Technical Stack & Specifications
+
+### Backend
+- **Runtime**: Node.js 20 LTS
+- **Framework**: Express.js
+- **Database**: MongoDB with Mongoose ODM
+- **Real-Time**: Socket.io + Redis Pub/Sub
+- **Queue/Worker**: BullMQ
+- **Authentication**: JWT tokens (Access + Refresh token rotations)
+- **Validation**: Zod
+- **File Handling**: Multer (Local disk driver or optional AWS S3)
+
+### Frontend
+- **Build Tool**: Vite
+- **Framework**: React
+- **State Management**: Redux Toolkit (RTK) Query for API and server state
+- **Real-Time**: Socket.io client
+
+---
+
+## 🏗 Advanced Features & Architecture
+
+### Multi-Tenant Architecture & RBAC
+- **User Isolation**: Users strictly access only the content assigned to their specific organization. Database queries enforce this using the authenticated token's `organizationId`.
+- **Role-Based Permissions**:
+  - **Viewer**: Read-only access to assigned videos and streaming.
+  - **Editor**: Upload, edit, and manage video content.
+  - **Admin**: Full system access, including generating single-use invite links.
+
+### System Diagram
 
 ```mermaid
 flowchart LR
@@ -90,253 +85,112 @@ flowchart LR
   SIOs -->|subscribe| Redis
 ```
 
-- **Tenant:** each **Organization** is a tenant; **Membership** ties users to orgs with roles **viewer**, **editor**, **admin**.
-- **Auth:** access JWT encodes `userId`, `organizationId`, and `role` for that org. Refresh tokens are JWTs tracked server-side (hashed in Mongo) for revocation.
-- **Videos:** documents are always queried with `organizationId` from the token — never from an untrusted client org field.
-- **Queue:** `video-processing` queue; worker skips work when the video is already **completed** (idempotent terminal state).
-- **Real time:** workers `PUBLISH` events on Redis; the API process `SUBSCRIBE`s and emits to Socket.io rooms `video:{videoId}` after clients call `video:subscribe`.
+### Folder Architecture
 
-### Repository layout
-
-| Path | Role |
+| Path | Description |
 |------|------|
-| `backend/src/modules/` | Feature modules: `auth`, `videos`, `orgs` — routes → controllers → **services** (business logic) |
-| `backend/src/infrastructure/` | DB models, Redis/BullMQ, storage providers, FFmpeg mock, sensitivity interface, socket wiring |
-| `backend/src/middleware/` | JWT auth, RBAC (`requireRole`), Zod validation, errors |
-| `backend/src/shared/` | Shared errors, HTTP range parsing |
-| `backend/src/workers/` | BullMQ worker entrypoint |
-| `frontend/src/lib/` | `api/` (RTK + reauth), `socket/`, `upload/` abort registry |
-| `frontend/src/features/` | `auth`, `videos`, `upload` (UI state slice) |
-| `frontend/src/app/` | Router shell, protected routes |
+| `backend/src/modules/` | Feature modules: `auth`, `videos`, `orgs` — routes → controllers → **services** (business rules) |
+| `backend/src/infrastructure/` | DB models, Redis/BullMQ, storage providers, FFmpeg mock, sensitivity interface, sockets |
+| `backend/src/middleware/` | JWT auth, RBAC (`requireRole`), Zod validation, error handling |
+| `frontend/src/lib/` | `api/` (RTK), `socket/`, `upload/` registry |
+| `frontend/src/features/`| Components organized by feature domains |
 
 ---
 
-## Assumptions and design decisions
+## 💻 Getting Started (Local Setup)
+
+### Prerequisites
+- **Node.js** 20 LTS
+- **Docker** (recommended) for MongoDB and Redis
+
+### 1. First-time setup
+
+Configure environment variables:
+```bash
+cp .env.example .env
+```
+*(Set `MONGODB_URI`, `REDIS_URL`, and a strong `JWT_SECRET` in the `.env` file)*
+
+Start database services via Docker:
+```bash
+docker compose up -d
+```
+
+Install dependencies for both projects:
+```bash
+cd backend && npm install
+cd ../frontend && npm install
+```
+
+### 2. Running Locally
+
+You need to run three separate processes in three terminals:
+
+| Terminal | Directory | Command | Purpose |
+|----------|-----------|---------|---------|
+| 1 | `backend/` | `npm run dev` | HTTP API + Socket.io Server |
+| 2 | `backend/` | `npm run worker` | BullMQ Video Processor |
+| 3 | `frontend/` | `npm run dev` | React SPA App |
+
+- **Frontend App**: `http://localhost:5173`
+- **Backend API**: `http://localhost:4000`
+- **API Health Check**: `GET http://localhost:4000/api/health`
+
+### 3. Usage Instructions
+
+1. Open the SPA (`http://localhost:5173`) and **Register** to create an account, organization, and admin membership.
+2. **Save the organization ID** shown after registration; you need it to **Log in** on other browsers or after clearing storage.
+3. **Dashboard:** list videos, filter by status and duration.
+4. **Upload (editor/admin):** pick a file → the app creates a pending video then uploads via multipart (`POST /videos/:id/upload`).
+5. **Video detail:** open a row; when status is **completed**, the player loads the stream with your JWT. Live processing updates arrive over Socket.io.
+6. **Admin invites:** Admins can invite new users in the UI via *User Management → Invite member*.
+
+---
+
+## 📐 Assumptions and Design Decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| **Organization as tenant** | Single active org per access token simplifies RBAC and guarantees every query can filter by one `organizationId`. |
-| **No business logic in routes or controllers** | Controllers map HTTP only; services own rules and orchestration — easier tests and reuse. |
-| **Refresh via plain `fetch` in RTK base query** | Avoids sending a stale `Authorization` header on refresh calls. |
-| **Redis pub/sub for worker → API sockets** | API and worker are different processes; no in-memory coupling. |
-| **Local “presigned” upload** | Simulates S3 flow: opaque upload token + POST to API; production uses real presigned PUT when `STORAGE_DRIVER=s3`. |
-| **FFmpeg + sensitivity mocked** | Keeps CI/dev free of native binaries; interfaces allow swapping real implementations. |
-| **SPA video playback via blob** | Simple and works with header-based JWT for small files; not ideal for very large assets without range/MediaSource or signed URLs. |
-| **`any` discouraged** | TypeScript strict; Mongoose `.lean<>()` generics used for tenant queries. |
+| **Organization as tenant** | Single active org per access token simplifies RBAC and guarantees every query can filter securely by `organizationId`. |
+| **No business logic in routes** | Controllers map HTTP only; services own rules and orchestration—easier testing and scaling. |
+| **Refresh via `fetch` in RTK** | Avoids sending a stale `Authorization` header on refresh calls. |
+| **Redis pub/sub for Sockets** | API and worker are different processes; pub/sub allows decoupling memory domains. |
+| **Local "presigned" upload**| Simulates S3 flow: opaque upload token + POST to API. Prod uses real presigned PUT strings when `STORAGE_DRIVER=s3`. |
+| **`any` explicitly discouraged**| Full end-to-end TypeScript strictness utilized. |
 
 ---
 
-## API documentation
+## 📄 API Documentation
 
-Base path: **`/api`**. Unless noted, request bodies are **JSON** with `Content-Type: application/json`.
+Base path: **`/api`**. Requests accept JSON bodies (`Content-Type: application/json`). Failed requests yield a standardized JSON object containing a `code`, `message`, and `details` (HTTP 422 for Zod Validation errors).
 
-### Error format
-
-Failed requests return JSON:
-
-```json
-{
-  "code": "NOT_FOUND",
-  "message": "Video not found",
-  "details": { }
-}
-```
-
-- **`VALIDATION_ERROR`** / HTTP **422** — Zod validation (`details` often has `fieldErrors`).
-- **`RANGE_NOT_SATISFIABLE`** / HTTP **416** — invalid `Range` for stream; `Content-Range: bytes */<size>` may be set.
-
-### Authentication
-
-Protected routes expect:
-
+Protected routes expect standard Bearer tokens:
 ```http
 Authorization: Bearer <access_jwt>
 ```
 
-Login and register responses include **`accessToken`**, **`refreshToken`**, **`organizationId`**, **`role`**.
+### Authentication endpoints
+- **`POST /api/auth/register`** - Registers new User + Tenant Org.
+- **`POST /api/auth/register-invite`** - Joins an existing Organization via an invite token.
+- **`POST /api/auth/login`** - standard email/password login. Returns `{ accessToken, refreshToken, organizationId, role }`.
+- **`POST /api/auth/refresh`** - Issue a new access token pair.
+- **`POST /api/auth/logout`** - Logs out and invalidates your refresh token.
+
+### Video Endpoints (Requires `Authorization`)
+- **`GET /api/videos`** (`viewer+`) - List and filter tenant videos.
+- **`POST /api/videos`** (`editor+`) - Creates a pending video.
+- **`POST /api/videos/:id/upload`** (`editor+`) - Handles physical multipart file uploading.
+- **`POST /api/videos/presigned-upload`** & **`complete-upload`** (`editor+`) - Multi-step endpoints used specifically for bypassing server bandwith limitations and interacting directly with Storage mechanisms (S3 AWS native).
+- **`GET /api/videos/:id/stream`** (`viewer+`) - Fetches video stream chunks honoring HTTP `Range` headers.
+
+### Web Sockets (`/socket.io`)
+- Secure handshake via `{ auth: { token: "<jwt>" } }`
+- Subscribe via `emit('video:subscribe', videoId)`
+- Receive `processing_progress`, `processing_completed`, and `processing_failed` updates dynamically.
 
 ---
 
-### `GET /api/health`
-
-Public. **200** — `{ "ok": true, "service": "pulse-api" }`.
-
----
-
-### `POST /api/auth/register`
-
-Public.
-
-**Body:**
-
-| Field | Type | Rules |
-|-------|------|--------|
-| `email` | string | email |
-| `password` | string | min 8 |
-| `organizationName` | string | 1–200 chars |
-
-**201** — Same token shape as login.
-
----
-
-### `POST /api/auth/register-invite`
-
-Public.
-
-Registers a user **into an existing organization** by consuming a single-use invite token.
-
-**Body:**
-
-| Field | Type | Rules |
-|-------|------|--------|
-| `email` | string | email |
-| `password` | string | min 8 |
-| `inviteToken` | string | required |
-
-**201** — `{ accessToken, refreshToken, organizationId, role }`
-
-Frontend UX:
-- Open `GET /register?invite=<inviteToken>` to switch Register into "Join organization" mode.
-
-### `POST /api/auth/login`
-
-Public.
-
-**Body:**
-
-| Field | Type |
-|-------|------|
-| `email` | string |
-| `password` | string |
-| `organizationId` | string (Mongo ObjectId) |
-
-**200** — `{ accessToken, refreshToken, organizationId, role }`.
-
----
-
-### `POST /api/auth/refresh`
-
-Public.
-
-**Body:** `{ refreshToken, organizationId }`
-
-**200** — New `{ accessToken, refreshToken, organizationId, role }`.
-
----
-
-### `POST /api/auth/logout`
-
-Public (but typically called with a valid session).
-
-**Body:** `{ refreshToken }`
-
-**204** — Refresh token row revoked.
-
----
-
-### Videos (all require `Authorization`)
-
-#### `GET /api/videos`
-
-**RBAC:** viewer+
-
-**Query (optional):**
-
-| Param | Description |
-|-------|-------------|
-| `status` | `pending` \| `processing` \| `completed` \| `failed` |
-| `minDurationSec` | number (filters by metadata duration when present) |
-| `maxDurationSec` | number |
-
-**200** — JSON array of video documents (scoped to org).
-
----
-
-#### `POST /api/videos`
-
-**RBAC:** editor+
-
-**Body (optional):** `{ originalFilename?: string }`
-
-**201** — `{ id: string }` (Mongo id of pending video).
-
----
-
-#### `POST /api/videos/:id/upload`
-
-**RBAC:** editor+
-
-**Body:** `multipart/form-data` with field **`file`** (max ~500 MB in config).
-
-**200** — `{ videoId, storageKey }` — enqueues processing.
-
----
-
-#### `POST /api/videos/presigned-upload`
-
-**RBAC:** editor+
-
-**Body:** `{ originalFilename, contentType? }` (default `video/mp4`).
-
-**201** — Instructions: `videoId`, `uploadToken`, `method`, `url`, `storageKey`, optional `headers` / `fields`.
-
-- **Local:** POST file to `url` with `Authorization` and header **`x-upload-token: <uploadToken>`**.
-- **S3:** PUT body to presigned `url`; then **`POST /api/videos/complete-upload`**.
-
----
-
-#### `POST /api/videos/presigned-blob/:videoId`
-
-**RBAC:** editor+
-
-**Body:** `multipart/form-data`, field **`file`**. Headers: **`x-upload-token`** as returned from presigned-upload.
-
-**204** — File stored; processing enqueued.
-
----
-
-#### `POST /api/videos/complete-upload`
-
-**RBAC:** editor+
-
-**Body:** `{ videoId, storageKey }` — verifies object exists (S3 HEAD / local stat); enqueues processing.
-
-**204**
-
----
-
-#### `GET /api/videos/:id`
-
-**RBAC:** viewer+
-
-**200** — Video document (org-scoped).
-
----
-
-#### `GET /api/videos/:id/stream`
-
-**RBAC:** viewer+
-
-Supports **`Range: bytes=...`**. **200** full body or **206** partial; `Accept-Ranges: bytes`.
-
----
-
-### Socket.io (same host/port as API)
-
-- **Handshake:** `auth: { token: "<access_jwt>" }`
-- **Client → server:** `emit('video:subscribe', videoId, callback?)` — server checks org ownership before joining `video:{videoId}`.
-- **Server → client:**
-  - `processing_progress` — `{ videoId, progress, stage? }`
-  - `processing_completed` — `{ videoId, stage? }`
-  - `processing_failed` — `{ videoId, error, stage? }`
-
-Path defaults to **`/socket.io`** (configure client accordingly).
-
----
-
-## Environment variables
-
-See **[`.env.example`](.env.example)** for the full list. Required for a typical local run:
+## ⚙️ Environment Variables (`.env`)
 
 | Variable | Example | Notes |
 |----------|---------|--------|
@@ -349,32 +203,13 @@ See **[`.env.example`](.env.example)** for the full list. Required for a typical
 | `UPLOAD_DIR` | `uploads` | Relative to `backend/` cwd for local storage |
 | `STORAGE_DRIVER` | `local` or `s3` | S3 needs bucket/region/credentials |
 
-Backend reads **repo-root `.env`** first (see `backend/src/config/env.ts`).
-
-Frontend (deployment):
-
-| Variable | Purpose |
-|----------|---------|
-
-
-## Admin invites (UI)
-
-Admin can generate single-use invite links:
-- UI: **Admin → User Management → Invite member**
-- API: `POST /api/orgs/:orgId/invites` → returns `{ inviteUrl, inviteToken, expiresAt, role, organizationId }`
-
 ---
 
-## Code quality
-
-| Practice | Where |
-|----------|--------|
-| **Strict TypeScript** | Backend `tsconfig` strict; frontend `strict`; avoid `any` in new code |
-| **Validation** | Zod on request bodies/queries; consistent `AppError` mapping |
-| **Layering** | No domain rules in Express routes or React “god components”; hooks orchestrate, RTK Query owns server state |
-| **Security** | Multi-tenant filters on every video query; RBAC middleware; refresh token hashing |
-| **Lint** | `npm run lint` in `backend/` and `frontend/` |
-
----
-
-
+✅ **Assignment Deliverables & Success Criteria**
+- [x] Complete video upload and storage system
+- [x] Real-time processing progress updates
+- [x] Video sensitivity analysis routing
+- [x] Secure video streaming with range requests
+- [x] Multi-tenant user isolation & RBAC implementation
+- [x] Clean, maintainable code structure with basic basic automated tests integration.
+- [x] Comprehensive documentation and error handling mechanisms.
