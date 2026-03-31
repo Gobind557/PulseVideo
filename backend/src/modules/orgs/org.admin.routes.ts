@@ -16,7 +16,7 @@ import { OrgAdminController } from './org.admin.controller.js';
 export function createOrgAdminRouter(env: Env, orgService: OrgService): Router {
   const router = Router();
   const auth = authenticateJWT(env);
-  const ctrl = new OrgAdminController(env, orgService);
+  const ctrl = new OrgAdminController(orgService);
 
   router.use(auth);
 

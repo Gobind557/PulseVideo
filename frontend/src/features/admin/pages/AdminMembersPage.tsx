@@ -38,7 +38,7 @@ export default function AdminMembersPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<MembershipRole>('viewer');
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
 
   const canEditRoles = role === 'admin';
 
@@ -92,7 +92,7 @@ export default function AdminMembersPage() {
             type="button"
             className="btn btn-primary"
             onClick={() => {
-              setInviteUrl(null);
+              setInviteToken(null);
               setInviteEmail('');
               setInviteRole('viewer');
               setInviteOpen(true);
@@ -164,7 +164,8 @@ export default function AdminMembersPage() {
           <div className="modal-card">
             <h3>Invite member</h3>
             <p className="hint">
-              Generate a single-use invite link (expires in 7 days). Optionally lock it to an email.
+              Generate a single-use invite token (expires in 7 days). Optionally lock it to an email.
+              Share the token with the viewer; they can open the register page and paste it.
             </p>
             <label>
               Role
@@ -189,16 +190,16 @@ export default function AdminMembersPage() {
               />
             </label>
 
-            {inviteUrl ? (
+            {inviteToken ? (
               <div style={{ marginTop: '0.75rem' }}>
-                <div className="hint">Invite link</div>
-                <input value={inviteUrl} readOnly onFocus={(e) => e.currentTarget.select()} />
+                <div className="hint">Invite token</div>
+                <input value={inviteToken} readOnly onFocus={(e) => e.currentTarget.select()} />
                 <div className="modal-actions">
                   <button
                     className="btn btn-secondary btn-sm"
-                    onClick={() => void navigator.clipboard.writeText(inviteUrl)}
+                    onClick={() => void navigator.clipboard.writeText(inviteToken)}
                   >
-                    Copy link
+                    Copy token
                   </button>
                   <button className="btn btn-primary btn-sm" onClick={() => setInviteOpen(false)}>
                     Done
@@ -222,7 +223,7 @@ export default function AdminMembersPage() {
                           role: inviteRole,
                           ...(inviteEmail.trim() ? { email: inviteEmail.trim() } : {}),
                         }).unwrap();
-                        setInviteUrl(res.inviteUrl);
+                        setInviteToken(res.inviteToken);
                       } catch (e) {
                         setUiError(e instanceof Error ? e.message : 'Invite failed');
                       }

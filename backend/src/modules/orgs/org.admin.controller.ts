@@ -1,6 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { MembershipRole } from '../../infrastructure/db/models/membership.model.js';
-import type { Env } from '../../config/env.js';
 import type { OrgService } from './org.service.js';
 import type { OrgSettings } from '../../infrastructure/db/models/organization.model.js';
 
@@ -15,10 +14,7 @@ function paramId(value: string | string[] | undefined): string {
 }
 
 export class OrgAdminController {
-  constructor(
-    private readonly env: Env,
-    private readonly orgService: OrgService
-  ) {}
+  constructor(private readonly orgService: OrgService) {}
 
   listMembers = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -113,9 +109,8 @@ export class OrgAdminController {
         email: body.email,
         role: body.role,
       });
-      const base = this.env.PUBLIC_WEB_URL.replace(/\/$/, '');
-      const inviteUrl = `${base}/register?invite=${encodeURIComponent(result.inviteToken)}`;
-      res.status(201).json({ ...result, inviteUrl });
+      // Return only the token and metadata; callers decide how to embed it into a URL.
+      res.status(201).json(result);
     } catch (e) {
       next(e);
     }

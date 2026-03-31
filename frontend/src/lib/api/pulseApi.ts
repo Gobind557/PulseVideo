@@ -54,7 +54,6 @@ export type PatchOrgSettingsBody = Partial<
 
 export type CreateOrgInviteResponse = {
   inviteToken: string;
-  inviteUrl: string;
   expiresAt: string;
   organizationId: string;
   role: MembershipRole;
