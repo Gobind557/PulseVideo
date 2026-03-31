@@ -213,3 +213,21 @@ Authorization: Bearer <access_jwt>
 - [x] Multi-tenant user isolation & RBAC implementation
 - [x] Clean, maintainable code structure with basic basic automated tests integration.
 - [x] Comprehensive documentation and error handling mechanisms.
+<img width="1904" height="957" alt="image" src="https://github.com/user-attachments/assets/9af120c1-1489-4ab9-b410-c9f4c103538a" />
+<img width="1847" height="961" alt="image" src="https://github.com/user-attachments/assets/44873504-0fac-4874-8ee7-08638dbb9012" />
+<img width="1918" height="946" alt="image" src="https://github.com/user-attachments/assets/008abd71-a4ae-4862-9286-992539e5c871" />
+
+<img width="1903" height="961" alt="image" src="https://github.com/user-attachments/assets/6f3997fa-d6eb-484e-9dd5-dedfb80b54de" />
+<img width="1912" height="944" alt="image" src="https://github.com/user-attachments/assets/ec91a1f6-f886-4540-b9f7-4f174725dfe1" />
+
+Seeded Demo Credentials :
+"password": "Pulse@12345",
+"organizationId": "69ca89c1144326cc3b5357a9",
+  "users": {
+    "admin": "admin@pulse.demo",
+    "editor": "editor@pulse.demo",
+    "viewer": "viewer@pulse.demo"
+  },
+
+
+
