@@ -19,17 +19,18 @@ export function createOrgAdminRouter(env: Env, orgService: OrgService): Router {
   const ctrl = new OrgAdminController(env, orgService);
 
   router.use(auth);
-  router.use(requireRole('admin'));
 
   router.get(
     '/:orgId/settings',
     validateParams(listMembersParamsSchema),
+    requireRole('viewer'),
     ctrl.getSettings
   );
 
   router.patch(
     '/:orgId/settings',
     validateParams(listMembersParamsSchema),
+    requireRole('admin'),
     validateBody(patchOrgSettingsBodySchema),
     ctrl.patchSettings
   );
@@ -37,12 +38,14 @@ export function createOrgAdminRouter(env: Env, orgService: OrgService): Router {
   router.get(
     '/:orgId/members',
     validateParams(listMembersParamsSchema),
+    requireRole('admin'),
     ctrl.listMembers
   );
 
   router.patch(
     '/:orgId/members/:userId/role',
     validateParams(memberRoleParamsSchema),
+    requireRole('admin'),
     validateBody(changeMemberRoleBodySchema),
     ctrl.changeMemberRole
   );
@@ -50,12 +53,14 @@ export function createOrgAdminRouter(env: Env, orgService: OrgService): Router {
   router.delete(
     '/:orgId/members/:userId',
     validateParams(memberRoleParamsSchema),
+    requireRole('admin'),
     ctrl.removeMember
   );
 
   router.post(
     '/:orgId/invites',
     validateParams(listMembersParamsSchema),
+    requireRole('admin'),
     validateBody(createInviteBodySchema),
     ctrl.createInvite
   );

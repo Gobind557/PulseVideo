@@ -18,6 +18,7 @@ import { registerAbort, releaseAbort } from '@/lib/upload/abortRegistry';
 import type { VideoDto } from '@/types/video';
 import { getVideoSocket } from '@/lib/socket/socket';
 import { getRtkQueryErrorMessage } from '@/lib/api/rtkErrorMessage';
+import { useGetOrgSettingsQuery } from '@/lib/api/pulseApi';
 
 function DashboardContent() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -52,6 +53,15 @@ function DashboardContent() {
   const { role, canUpload } = useRBAC();
   const dispatch = useAppDispatch();
   const token = useAppSelector((s) => s.auth.accessToken);
+  const orgId = useAppSelector((s) => s.auth.organizationId);
+  const {
+    data: orgSettings,
+    isLoading: orgSettingsLoading,
+    isError: orgSettingsError,
+  } = useGetOrgSettingsQuery(
+    { orgId: orgId ?? '' },
+    { skip: !orgId }
+  );
   const fileRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -255,7 +265,26 @@ function DashboardContent() {
                 Drag and drop or click to select your file
               </div>
               <div className="upload-dropzone-meta">
-                Max size and allowed formats follow your org settings (System Settings).
+                {role === 'editor' || role === 'admin' ? (
+                  orgSettingsLoading ? (
+                    'Loading your org settings…'
+                  ) : orgSettings ? (
+                    <>
+                      Max size: {orgSettings.maxVideoFileSizeMb}MB · Allowed formats:{' '}
+                      {orgSettings.allowedFormats}
+                      <br />
+                      {role === 'editor'
+                        ? 'Call your administrator to change System Settings.'
+                        : 'You can change System Settings from the admin page.'}
+                    </>
+                  ) : orgSettingsError ? (
+                    'Could not load your org settings.'
+                  ) : (
+                    'Max size and allowed formats follow your org settings.'
+                  )
+                ) : (
+                  'Max size and allowed formats follow your org settings (System Settings).'
+                )}
               </div>
               <button
                 type="button"
